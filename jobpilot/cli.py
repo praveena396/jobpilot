@@ -163,7 +163,7 @@ def today(
 
     from jobpilot import get, get_root
     from jobpilot.db import get_daily_queue, get_todays_application_count
-    from jobpilot.matching import grad_eligibility, score_job
+    from jobpilot.matching import grad_eligibility, new_grad_signal, score_job
     from jobpilot.scraper.jobs import (
         SENIOR_LEVELS,
         _location_matches_scope,
@@ -207,6 +207,10 @@ def today(
             continue
         eligible, why = grad_eligibility(r["title"], desc)
         if eligible == "no" and get("job_search.hide_ineligible_grad_years", True):
+            continue
+        if get("job_search.new_grad_only", False) and not (
+            eligible == "yes" or new_grad_signal(r["title"], desc, r["source"])
+        ):
             continue
         score, skills = score_job(r["title"], desc, level)
         if score >= (threshold if desc else title_only_threshold):

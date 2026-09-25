@@ -294,7 +294,9 @@ async def scrape_linkedin_jobs(
     url = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
     headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
 
-    for role in roles[:max_roles]:
+    extra_keywords = get("job_search.linkedin.keywords", []) or []
+    searches = list(dict.fromkeys([*roles[:max_roles], *extra_keywords]))
+    for role in searches:
         for loc_name, geo_id in search_locations:
             params = {
                 "keywords": role,
@@ -513,7 +515,10 @@ async def scrape_all_sources(location_scope: str = "all") -> list[JobListing]:
     salary_floor = get("profile.salary_floor_usd", 0)
     blacklist = [c.lower() for c in get("job_search.blacklisted_companies", [])]
 
+    from jobpilot.matching import new_grad_signal
+
     entry_level_only = get("job_search.entry_level_only", False)
+    new_grad_only = get("job_search.new_grad_only", False)
     max_age_days = get("job_search.max_age_days", 0)
 
     matched = []
@@ -524,6 +529,8 @@ async def scrape_all_sources(location_scope: str = "all") -> list[JobListing]:
         if job.company.lower() in blacklist:
             continue
         if entry_level_only and not is_entry_level(job):
+            continue
+        if new_grad_only and not new_grad_signal(job.title, job.description, job.source):
             continue
         if not posted_within(job.posted_at, max_age_days):
             continue

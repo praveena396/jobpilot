@@ -427,3 +427,20 @@ def test_location_scope(location: str, scope: str, expected: bool) -> None:
 )
 def test_lead_and_intermediate_titles(title: str, level: str) -> None:
     assert detect_level(title) == level
+
+
+@pytest.mark.parametrize(
+    ("title", "description", "source", "is_new_grad"),
+    [
+        ("Software Engineer, New Grad", "", "linkedin", True),
+        ("Machine Learning Engineer - University Graduate", "", "greenhouse", True),
+        ("Early Career Software Engineer", "", "ashby", True),
+        ("Software Engineer", "Ideal for recent graduates with 0-1 years of experience.", "lever",
+         True),
+        ("Software Engineer", "", "simplify", True),  # the SimplifyJobs new grad list
+        ("Software Engineer I", "3+ years building APIs.", "greenhouse", False),
+        ("AI Engineer", "Build agents with our senior team.", "linkedin", False),
+    ],
+)
+def test_new_grad_signal(title: str, description: str, source: str, is_new_grad: bool) -> None:
+    assert bool(matching.new_grad_signal(title, description, source)) is is_new_grad

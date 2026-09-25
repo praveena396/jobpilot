@@ -275,6 +275,8 @@ job_search:
   # --- New grad / entry-level focus ---
   default_location: "usa"     # used by `jobpilot today` with no location (usa/india/bangalore/all)
   entry_level_only: true      # drop senior/staff/manager roles
+  new_grad_only: true         # only roles that say new grad / graduate / early career /
+                              # entry level / recent grads (title or description)
   hide_ineligible_grad_years: true  # hide "Class of 2026", "2027 Start", "currently enrolled" roles
   max_years_experience: 2     # drop roles asking for more than this
   include_internships: false
@@ -284,7 +286,16 @@ job_search:
     experience_levels: [2, 3]  # 1=Internship 2=Entry level 3=Associate 4=Mid-Senior
     max_roles: 8               # how many job_titles to search on LinkedIn
     pages_per_search: 3
-    max_descriptions: 120  # job descriptions to fetch per scan (for skill matching)
+    # Extra LinkedIn searches (in addition to job_titles) aimed at new grad postings
+    keywords:
+      - "new grad software engineer"
+      - "new grad machine learning engineer"
+      - "new grad AI engineer"
+      - "university graduate software engineer"
+      - "early career software engineer"
+      - "entry level AI engineer"
+      - "recent graduate software engineer"
+    max_descriptions: 200  # job descriptions to fetch per scan (for skill matching)
   # Extra company job boards (slug from the board URL), added to the built-in lists
   greenhouse_companies: []    # boards.greenhouse.io/<slug>
   lever_companies: []         # jobs.lever.co/<slug>

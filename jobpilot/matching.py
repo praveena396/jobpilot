@@ -305,3 +305,33 @@ def grad_eligibility(title: str, description: str = "") -> tuple[str, str]:
     if _RECENT_GRAD_RE.search(text):
         return "likely", "entry level / recent grads"
     return "unknown", ""
+
+
+# ── New grad detection ───────────────────────────────────────────────────────
+
+_NEW_GRAD_TITLE_RE = re.compile(
+    r"new[\s-]*grad|graduate|university|early[\s-]*career|entry[\s-]*level|campus|college"
+    r"|fresher|recent[\s-]*grad",
+    re.IGNORECASE,
+)
+_NEW_GRAD_DESC_RE = re.compile(
+    r"new[\s-]*grads?\b|recent(?:ly)?\s+graduat|early[\s-]*career|entry[\s-]*level"
+    r"|(?:university|college)\s+(?:graduates?|grads?|hires?)|class\s+of\s+20\d\d"
+    r"|0\s*(?:-|–|to)\s*1\s*(?:years?|yrs?)|no\s+(?:prior\s+|professional\s+)?experience\s+"
+    r"(?:is\s+)?(?:required|necessary|needed)|graduat(?:ed|ing)\s+(?:in|between|within|by)\b",
+    re.IGNORECASE,
+)
+NEW_GRAD_SOURCES = {"simplify"}  # lists that only contain new grad roles
+
+
+def new_grad_signal(title: str, description: str = "", source: str = "") -> str:
+    """Why this is a new grad role ("" if nothing says so)."""
+    if source in NEW_GRAD_SOURCES:
+        return "new grad list"
+    m = _NEW_GRAD_TITLE_RE.search(title)
+    if m:
+        return f"title: {m.group(0).strip()}"
+    m = _NEW_GRAD_DESC_RE.search(description or "")
+    if m:
+        return f"JD: {m.group(0).strip()}"
+    return ""

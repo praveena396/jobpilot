@@ -73,6 +73,8 @@ Settings in `job_search` (config/settings.yaml):
 - `max_applications_per_day` — daily target (50)
 - `entry_level_only` — drop senior / staff / manager roles and roles asking for more than
   `max_years_experience` years (parsed from the job description when available)
+- `new_grad_only` — only roles that say new grad / graduate / early career / entry level /
+  recent graduates in the title or description (or come from the new grad list)
 - `max_age_days` — only keep jobs posted in the last N days (LinkedIn uses its "past 24h" filter)
 - `linkedin.experience_levels` — LinkedIn filter: 1=Internship, 2=Entry level, 3=Associate
 - `greenhouse_companies` / `lever_companies` / `ashby_companies` — add more company boards by slug

@@ -56,6 +56,7 @@ job_search:
   # --- New grad / entry-level focus ---
   default_location: "all"     # used by `jobpilot today` with no location (usa/india/bangalore/all)
   entry_level_only: true      # drop senior/staff/manager roles
+  new_grad_only: false        # true = only roles that explicitly target new grads
   hide_ineligible_grad_years: true  # hide "Class of 2026", "2027 Start", "currently enrolled" roles
   max_years_experience: 2     # drop roles asking for more than this
   include_internships: false
@@ -65,6 +66,7 @@ job_search:
     experience_levels: [2, 3]  # 1=Internship 2=Entry level 3=Associate 4=Mid-Senior
     max_roles: 8               # how many job_titles to search on LinkedIn
     pages_per_search: 3
+    keywords: []               # extra LinkedIn searches, e.g. ["new grad software engineer"]
     max_descriptions: 120  # job descriptions to fetch per scan (for skill matching)
   # Extra company job boards (slug from the board URL), added to the built-in lists
   greenhouse_companies: []    # boards.greenhouse.io/<slug>
