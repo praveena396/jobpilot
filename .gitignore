@@ -1,0 +1,29 @@
+# Byte-compiled
+__pycache__/
+*.pyc
+
+# Virtual env
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Data
+data/*.db
+data/*.json
+data/resumes/
+data/profiles/
+data/browser_context/
+!data/.gitkeep
+
+# Secrets
+.env
+config/secrets.yaml
+
+# Generated
+output/
+*.egg-info/
+*.pdf
+*.docx

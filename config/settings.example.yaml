@@ -1,0 +1,80 @@
+# JobPilot Configuration
+# Copy to config/settings.yaml and fill in your details
+
+profile:
+  linkedin_url: ""
+  target_level: "L5"  # L3/L4/L5/L6/L7
+  target_roles:
+    - "Backend Engineer"
+    - "Platform Engineer"
+    - "Software Engineer"
+  tech_stack:
+    - "Python"
+    - "Go"
+    - "Kubernetes"
+    - "AWS"
+    - "PostgreSQL"
+  target_companies:
+    - "Google"
+    - "Meta"
+    - "Apple"
+    - "Amazon"
+    - "Netflix"
+    - "Microsoft"
+    - "Stripe"
+    - "Databricks"
+    - "OpenAI"
+    - "Anthropic"
+  salary_floor_usd: 200000
+  location: "remote"  # remote / hybrid / onsite
+  visa_sponsorship_needed: false
+  visa_status: "citizen"  # citizen / pr / h1b / need_sponsorship
+  availability: "2 weeks notice"
+  portfolio:
+    github: ""
+    website: ""
+    publications: []
+  achievements: []
+  education: []
+  certifications: []
+
+job_search:
+  match_threshold: 70  # minimum skill overlap %
+  max_applications_per_day: 10
+  min_company_stage: "series_c"  # series_c / public / revenue_100m
+  check_interval_minutes: 30
+  sources:
+    - "linkedin"
+    - "greenhouse"
+    - "lever"
+    - "company_careers"
+  blacklisted_companies: []
+
+resume:
+  max_pages_junior: 1   # L3-L4
+  max_pages_senior: 2   # L5+
+  ats_target_score: 90
+  output_dir: "output/resumes"
+
+notifications:
+  enabled: true
+  method: "telegram"  # telegram / email / desktop
+  telegram:
+    bot_token: ""
+    chat_id: ""
+  email:
+    smtp_host: ""
+    smtp_port: 587
+    username: ""
+    password: ""
+    to_address: ""
+  auto_apply_delay_minutes: 30  # wait before auto-applying
+
+ai:
+  provider: "openai"  # openai / anthropic / local
+  api_key: ""
+  model: "gpt-4o"
+  temperature: 0.3
+
+database:
+  path: "data/jobpilot.db"
