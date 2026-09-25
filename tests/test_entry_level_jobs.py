@@ -8,6 +8,7 @@ import pytest
 import jobpilot
 from jobpilot import db, matching
 from jobpilot.scraper import jobs as jobs_mod
+from jobpilot.scraper.descriptions import enrich_descriptions, fetch_description
 from jobpilot.scraper.jobs import (
     JobListing,
     detect_level,
@@ -292,3 +293,104 @@ def test_fetch_linkedin_descriptions(ml_profile, monkeypatch) -> None:
     assert jobs[0].description.startswith("Python, PyTorch")
     assert jobs[0].level == "L3"  # from LinkedIn's "Entry level" tag
     assert jobs[0].match_score >= 80
+
+
+# ── Graduation-year eligibility ──────────────────────────────────────────────
+
+@pytest.mark.parametrize(
+    ("title", "description", "expected"),
+    [
+        ("Software Engineer, New Grad 2025", "", "yes"),
+        ("Software Engineer", "Open to 2025 or 2026 graduates.", "yes"),
+        ("Software Engineer", "Must have graduated between December 2024 and June 2026.", "yes"),
+        ("Software Engineer", "You graduated within the past two years.", "yes"),
+        ("AI Engineer Graduate - 2027 Start", "", "no"),
+        ("Software Engineer New Grad - December 2026", "", "no"),
+        ("Machine Learning Engineer - 2027", "", "no"),
+        ("Software Engineer", "Must be graduating between Dec 2025 and Aug 2026.", "no"),
+        ("Software Engineer", "You graduated within the last 12 months.", "no"),
+        ("Software Engineer", "Must be currently enrolled in a Bachelor's program.", "no"),
+        ("Associate AI Engineer", "Recent graduates welcome, 0-2 years of experience.", "likely"),
+        ("Backend Engineer", "We have used Python since 2019.", "unknown"),
+    ],
+)
+def test_grad_eligibility(monkeypatch, title: str, description: str, expected: str) -> None:
+    import datetime as dt
+
+    class FixedDate(dt.date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 9, 25)
+
+    monkeypatch.setattr(dt, "date", FixedDate)
+    jobpilot._CONFIG["profile"]["graduation_date"] = "2025-05"
+    assert matching.grad_eligibility(title, description)[0] == expected
+
+
+def test_is_entry_level_hides_other_graduating_classes() -> None:
+    jobpilot._CONFIG["profile"]["graduation_date"] = "2025-05"
+    assert not is_entry_level(_job("Software Engineer New Grad - 2027 Start"))
+    assert is_entry_level(_job("Software Engineer New Grad 2025"))
+
+
+# ── Description fetching for aggregator links ────────────────────────────────
+
+API_RESPONSES = {
+    "acme.wd5.myworkdayjobs.com/wday/cxs/acme/External/job/Remote/SWE_R1": {
+        "jobPostingInfo": {"jobDescription": "<p>Workday: Python and React</p>"}},
+    "boards-api.greenhouse.io/v1/boards/acme/jobs/123": {
+        "content": "&lt;p&gt;Greenhouse JD&lt;/p&gt;"},
+    "api.lever.co/v0/postings/acme/2937f26a-3e66-4d42-ba61-c26e5b52f488": {
+        "descriptionPlain": "Lever JD", "lists": [{"content": "<li>FastAPI</li>"}]},
+    "api.ashbyhq.com/posting-api/job-board/acme": {"jobs": [
+        {"id": "5c8433ea-c7e6-4350-bbd5-2889e7fdb2b1", "descriptionPlain": "Ashby JD"}]},
+    "api.smartrecruiters.com/v1/companies/Acme/postings/7443": {"jobAd": {"sections": {
+        "jobDescription": {"text": "<p>SmartRecruiters JD</p>"}}}},
+}
+
+
+def _api_transport() -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        key = f"{request.url.host}{request.url.path}"
+        if key in API_RESPONSES:
+            return httpx.Response(200, json=API_RESPONSES[key])
+        return httpx.Response(404)
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote/SWE_R1/apply",
+         "Workday: Python and React"),
+        ("https://job-boards.greenhouse.io/acme/jobs/123?gh_jid=123", "Greenhouse JD"),
+        ("https://jobs.lever.co/acme/2937f26a-3e66-4d42-ba61-c26e5b52f488/apply",
+         "Lever JD FastAPI"),
+        ("https://jobs.ashbyhq.com/acme/5c8433ea-c7e6-4350-bbd5-2889e7fdb2b1/application",
+         "Ashby JD"),
+        ("https://jobs.smartrecruiters.com/Acme/7443-software-engineer", "SmartRecruiters JD"),
+        ("https://careers.example.com/job/1", ""),
+    ],
+)
+def test_fetch_description(url: str, expected: str) -> None:
+    async def run() -> str:
+        async with httpx.AsyncClient(transport=_api_transport()) as client:
+            return await fetch_description(client, url)
+
+    assert asyncio.run(run()) == expected
+
+
+def test_enrich_descriptions_rescores(ml_profile, monkeypatch) -> None:
+    job = JobListing("simplify", "Acme", "ML Engineer", "L3", "Remote", 0, 0,
+                     "https://job-boards.greenhouse.io/acme/jobs/123", "", "", 40)
+    monkeypatch.setitem(API_RESPONSES, "boards-api.greenhouse.io/v1/boards/acme/jobs/123",
+                        {"content": "Python, PyTorch and FastAPI. 0-1 years of experience."})
+
+    async def run() -> int:
+        async with httpx.AsyncClient(transport=_api_transport()) as client:
+            return await enrich_descriptions(client, [job])
+
+    assert asyncio.run(run()) == 1
+    assert job.description.startswith("Python, PyTorch")
+    assert job.level == "L3"
+    assert job.match_score > 80

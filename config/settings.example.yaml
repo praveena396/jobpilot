@@ -40,16 +40,23 @@ profile:
 
   # --- Resume-based matching ---
   resume_path: ""          # optional: path to your resume (.pdf/.docx/.txt)
+  graduation_date: ""      # "YYYY-MM" — hides new grad roles meant for other classes
   core_skills: []          # e.g. ["Python", "PyTorch", "FastAPI"] (see SKILL_VOCAB in matching.py)
   focus_keywords: []       # title words for your area, e.g. ["backend", "ml", "ai"]
 
 job_search:
   match_threshold: 55  # 0-100, see jobpilot/matching.py for how it's scored
+  # Jobs whose description couldn't be fetched can't earn skill points; an entry-level
+  # title in your target roles scores 40, so this keeps them without letting junk in.
+  match_threshold_title_only: 40
+  max_descriptions: 300       # descriptions to fetch per scan from Workday/Greenhouse/Lever/...
   # Job titles containing any of these are never shown
   exclude_title_keywords: []  # e.g. ["java", "frontend", "sales", "manager"]
   max_applications_per_day: 50  # daily target used by `jobpilot today`
   # --- New grad / entry-level focus ---
+  default_location: "all"     # used by `jobpilot today` with no location (usa/india/bangalore/all)
   entry_level_only: true      # drop senior/staff/manager roles
+  hide_ineligible_grad_years: true  # hide "Class of 2026", "2027 Start", "currently enrolled" roles
   max_years_experience: 2     # drop roles asking for more than this
   include_internships: false
   max_age_days: 1             # only jobs posted in the last N days

@@ -90,9 +90,16 @@ Each job gets a 0-100 score (`jobpilot/matching.py`); only jobs at or above
   tech stack, work history, projects and achievements in your config.
 - **Level (-20 to +15):** entry level scores highest.
 
-Job descriptions are fetched from Greenhouse, Lever, Ashby and LinkedIn (up to
-`job_search.linkedin.max_descriptions` per scan), so skills can be compared. Other sources are
-scored on the title only. `jobpilot today` shows which of your skills each job asks for.
+**Graduation year:** set `profile.graduation_date` (e.g. `"2025-05"`). Roles for other classes
+("Class of 2026", "New Grad - December 2026", "2027 Start", "graduating between Dec 2025 and
+Aug 2026", "currently enrolled") are hidden, and `today` shows whether each job is confirmed
+open to your class (`✓ yes`), open to recent grads (`likely`), or doesn't say (`?`).
+
+Job descriptions are fetched from Greenhouse, Lever, Ashby and LinkedIn, and for links on
+aggregator lists that point to Workday, Greenhouse, Lever, Ashby or SmartRecruiters (up to
+`job_search.linkedin.max_descriptions` / `job_search.max_descriptions` per scan), so skills can
+be compared. Jobs without a description are scored on the title only and use the lower
+`match_threshold_title_only`. `jobpilot today` shows which of your skills each job asks for.
 
 ## ATS Score > 90 Strategy
 

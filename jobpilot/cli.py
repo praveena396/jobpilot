@@ -151,7 +151,9 @@ def _normalize_scope(location: str) -> str:
 
 @app.command()
 def today(
-    location: str = typer.Argument("all", help="Location scope: bangalore, india, usa, or all"),
+    location: str = typer.Argument(
+        None, help="bangalore, india, usa, or all (default: job_search.default_location)"
+    ),
     limit: int = typer.Option(0, "--limit", "-n", help="Jobs to list (default: today's target)"),
     scan_first: bool = typer.Option(True, "--scan/--no-scan", help="Scan job boards first"),
 ):
@@ -161,7 +163,7 @@ def today(
 
     from jobpilot import get, get_root
     from jobpilot.db import get_daily_queue, get_todays_application_count
-    from jobpilot.matching import score_job
+    from jobpilot.matching import grad_eligibility, score_job
     from jobpilot.scraper.jobs import (
         SENIOR_LEVELS,
         _location_matches_scope,
@@ -171,7 +173,7 @@ def today(
     )
     from rich.table import Table
 
-    location_scope = _normalize_scope(location)
+    location_scope = _normalize_scope(location or get("job_search.default_location", "all"))
     target = get("job_search.max_applications_per_day", 50)
     done = get_todays_application_count()
     remaining = max(target - done, 0)
@@ -186,6 +188,7 @@ def today(
 
     # Re-score everything against your current resume/config, so older rows stay accurate
     threshold = get("job_search.match_threshold", 55)
+    title_only_threshold = get("job_search.match_threshold_title_only", threshold)
     max_years = get("job_search.max_years_experience", 2)
     rows = []
     for r in get_daily_queue(
@@ -202,10 +205,16 @@ def today(
         years = min_years_required(desc)
         if years is not None and years > max_years:
             continue
+        eligible, why = grad_eligibility(r["title"], desc)
+        if eligible == "no" and get("job_search.hide_ineligible_grad_years", True):
+            continue
         score, skills = score_job(r["title"], desc, level)
-        if score >= threshold:
-            rows.append({**r, "level": level, "match_score": score, "skills": skills})
-    rows.sort(key=lambda r: r["match_score"], reverse=True)
+        if score >= (threshold if desc else title_only_threshold):
+            rows.append({**r, "level": level, "match_score": score, "skills": skills,
+                         "eligible": eligible, "eligible_why": why})
+    # Confirmed-eligible jobs first among similar scores
+    bonus = {"yes": 8, "likely": 4}
+    rows.sort(key=lambda r: r["match_score"] + bonus.get(r["eligible"], 0), reverse=True)
     rows = rows[:limit]
 
     if not rows:
@@ -221,12 +230,14 @@ def today(
     table.add_column("Company", width=16, style="cyan")
     table.add_column("Role", width=32)
     table.add_column("Location", width=14)
-    table.add_column("Your skills it asks for", width=30)
+    table.add_column("Grad yr ok?", width=11)
+    table.add_column("Your skills it asks for", width=28)
+    marks = {"yes": "[green]✓ yes[/green]", "likely": "likely", "unknown": "[dim]?[/dim]"}
     for r in rows:
         skills = ", ".join(r["skills"][:5]) if r["description"] else "(title only — no JD)"
         table.add_row(
             str(r["id"]), str(r["match_score"]), r["company"][:16], r["title"][:32],
-            (r["location"] or "")[:14], skills,
+            (r["location"] or "")[:14], marks.get(r["eligible"], "?"), skills,
         )
     console.print(table)
 
@@ -236,10 +247,11 @@ def today(
     with out_path.open("w", newline="", encoding="utf-8-sig") as f:  # Excel-friendly
         writer = csv.writer(f)
         writer.writerow(["id", "score", "level", "company", "title", "location", "source",
-                         "matched_skills", "url"])
+                         "grad_year_eligible", "why", "matched_skills", "url"])
         for r in rows:
             writer.writerow([r["id"], r["match_score"], r["level"], r["company"], r["title"],
-                             r["location"], r["source"], "; ".join(r["skills"]), r["url"]])
+                             r["location"], r["source"], r["eligible"], r["eligible_why"],
+                             "; ".join(r["skills"]), r["url"]])
 
     console.print(f"\n📄 Links saved to [bold]{out_path}[/bold]")
     console.print("✅ After applying:  [bold]jobpilot applied <ID> [<ID> ...][/bold]")

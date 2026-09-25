@@ -66,9 +66,19 @@ SKILL_VOCAB: dict[str, list[str]] = {
     "CUDA": [r"cuda"],
     "OpenAI API": [r"openai"],
     "Hugging Face": [r"hugging\s*face", r"transformers"],
-    "Vector DB": [r"vector (?:db|database|store)s?", r"pinecone", r"faiss", r"chroma"],
-    "Agents": [r"ai agents?", r"agentic", r"multi-agent"],
+    "Vector DB": [r"vector (?:db|database|store|search)s?", r"pinecone", r"faiss",
+                  r"chroma(?:db)?", r"weaviate", r"pgvector"],
+    "Agents": [r"(?:ai|llm) agents?", r"agentic", r"multi-agent", r"autonomous agents?"],
     "Robotics": [r"robotics?"],
+    "Next.js": [r"next\.?js"],
+    "LangGraph": [r"langgraph"],
+    "MCP": [r"mcp", r"model context protocol"],
+    "Function Calling": [r"function[- ]calling", r"tool[- ](?:calling|use)"],
+    "Gemini API": [r"gemini"],
+    "Embeddings": [r"embeddings?"],
+    "WebSockets": [r"websockets?"],
+    "asyncio": [r"asyncio", r"async(?:hronous)? python"],
+    "Full Stack": [r"full[- ]?stack"],
     "Salesforce": [r"salesforce"],
     "pytest": [r"pytest"],
     "TDD": [r"tdd", r"test[- ]driven"],
@@ -187,3 +197,111 @@ def score_job(title: str, description: str, level: str) -> tuple[int, list[str]]
     score = title_points + skill_points + LEVEL_POINTS.get(level, 10)
     # Put your core skills first so the table shows the strongest reasons
     return max(min(score, 100), 0), core_hits + other_hits
+
+
+# ── Graduation-year eligibility ──────────────────────────────────────────────
+
+_NUM_WORDS = {"one": 1, "two": 2, "three": 3, "six": 6, "twelve": 12, "eighteen": 18,
+              "twenty-four": 24}
+_YEAR_LIST = r"((?:20\d\d\s*(?:,|/|or|and|&|-|–)\s*)*20\d\d)"
+# "Class of 2026", "2025 or 2026 graduates", "New Grad 2026", "graduating in May 2026"
+_COHORT_RES = [
+    re.compile(r"class of\s+" + _YEAR_LIST),
+    re.compile(_YEAR_LIST + r"\s+(?:new\s+|university\s+|college\s+)?grad(?:uate)?s?\b"),
+    re.compile(r"new\s*grad(?:uate)?s?\s*[-–(,:]?\s*(?:[a-z]+\s+)?" + _YEAR_LIST),
+    re.compile(r"(?:graduating|graduation|to graduate|graduate)\s+(?:date\s+)?(?:in|by|from|of)?"
+               r"\s*(?:[a-z]+\s+)?" + _YEAR_LIST),
+]
+# "2027 Start", "starting in January 2026", "start date: 2026"
+_START_RES = [
+    re.compile(r"(20\d\d)\s+start\b"),
+    re.compile(r"start(?:ing)?(?:\s+date)?\s*(?:in|:)?\s*(?:[a-z]+\s+)?(20\d\d)\b"),
+]
+_RANGE_RE = re.compile(
+    r"graduat\w*[^.]{0,60}?between\s+(?:([a-z]+)\.?\s+)?(20\d\d)\s+(?:and|-|–|to)\s+"
+    r"(?:([a-z]+)\.?\s+)?(20\d\d)"
+)
+_MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+
+
+def _month(word: str | None, default: int) -> int:
+    return _MONTHS.get((word or "")[:3], default)
+_WITHIN_RE = re.compile(
+    r"graduated\s+(?:with)?in\s+the\s+(?:last|past)\s+(\d+|[a-z-]+)\s+(months?|years?)"
+)
+_STUDENT_ONLY_RE = re.compile(
+    r"currently\s+(?:enrolled|pursuing)|must\s+be\s+(?:currently\s+)?enrolled"
+    r"|returning\s+to\s+school|final[- ]year\s+students?"
+)
+_RECENT_GRAD_RE = re.compile(
+    r"recent(?:ly)?\s+(?:graduat|complet)|early[- ]career|entry[- ]level|new\s*grad"
+    r"|0\s*(?:-|–|to)\s*[123]\s*(?:years?|yrs?)|[12]\+?\s*years?"
+)
+
+
+def _graduation() -> tuple[int, int]:
+    """(year, month) you graduated: profile.graduation_date "YYYY-MM" or education end_year."""
+    raw = str(get("profile.graduation_date", "") or "")
+    m = re.match(r"(20\d\d)(?:-(\d{1,2}))?", raw)
+    if m:
+        return int(m.group(1)), int(m.group(2) or 6)
+    years = [e.get("end_year") for e in get("profile.education", []) or [] if e.get("end_year")]
+    return (int(max(years)), 6) if years else (0, 0)
+
+
+def _years(group: str) -> list[int]:
+    return [int(y) for y in re.findall(r"20\d\d", group)]
+
+
+def grad_eligibility(title: str, description: str = "") -> tuple[str, str]:
+    """("yes" | "likely" | "no" | "unknown", reason) for your graduation date."""
+    grad_year, grad_month = _graduation()
+    if not grad_year:
+        return "unknown", ""
+    t = title.lower()
+    d = (description or "").lower()
+    text = f"{t}\n{d}"
+
+    m = _RANGE_RE.search(text)
+    if m:
+        lo = (int(m.group(2)), _month(m.group(1), 1))
+        hi = (int(m.group(4)), _month(m.group(3), 12))
+        label = f"grads {m.group(1) or ''} {lo[0]} - {m.group(3) or ''} {hi[0]}"
+        label = re.sub(r"\s+", " ", label).title().replace("Grads", "grads")
+        if lo <= (grad_year, grad_month) <= hi:
+            return "yes", label
+        return "no", f"{label} only"
+
+    m = _WITHIN_RE.search(text)
+    if m:
+        n = int(m.group(1)) if m.group(1).isdigit() else _NUM_WORDS.get(m.group(1), 0)
+        months = n * 12 if m.group(2).startswith("year") else n
+        from datetime import date
+
+        today = date.today()
+        since = (today.year - grad_year) * 12 + today.month - grad_month
+        if n:
+            return ("yes", f"grads in last {n} {m.group(2)}") if since <= months else (
+                "no", f"grads in last {n} {m.group(2)} only")
+
+    cohort = [y for rx in _COHORT_RES for g in rx.findall(text) for y in _years(g)]
+    starts = [y for rx in _START_RES for g in rx.findall(text) for y in _years(g)]
+    # A bare year in a job title ("ML Engineer - 2027") is the graduating class
+    if not cohort and not starts:
+        cohort = _years(t)
+    if cohort:
+        if grad_year in cohort:
+            return "yes", f"class of {grad_year} ok"
+        if min(cohort) > grad_year:
+            return "no", f"class of {min(cohort)}+"
+        return "no", f"class of {max(cohort)} only"
+    if starts and min(starts) > grad_year + 1:
+        return "no", f"{min(starts)} start (students)"
+
+    recent_grads_ok = re.search(r"recent(?:ly)?\s+(?:graduat|complet)", text)
+    if _STUDENT_ONLY_RE.search(text) and not recent_grads_ok:
+        return "no", "current students only"
+    if _RECENT_GRAD_RE.search(text):
+        return "likely", "entry level / recent grads"
+    return "unknown", ""

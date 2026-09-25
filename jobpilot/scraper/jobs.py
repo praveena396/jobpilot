@@ -102,7 +102,13 @@ def is_entry_level(job: "JobListing") -> bool:
         return False
     max_years = get("job_search.max_years_experience", 2)
     years = min_years_required(job.description)
-    return years is None or years <= max_years
+    if years is not None and years > max_years:
+        return False
+    if get("job_search.hide_ineligible_grad_years", True):
+        from jobpilot.matching import grad_eligibility
+
+        return grad_eligibility(job.title, job.description)[0] != "no"
+    return True
 
 
 def posted_within(posted_at: str, max_age_days: float) -> bool:
@@ -495,8 +501,13 @@ async def scrape_all_sources(location_scope: str = "all") -> list[JobListing]:
             if isinstance(result, list):
                 all_jobs.extend(result)
 
-        # LinkedIn search results have no description — fetch it for promising jobs
+        # Search results / aggregator lists have no description — fetch it for promising jobs
         await fetch_linkedin_descriptions(client, all_jobs)
+        from jobpilot.scraper.descriptions import enrich_descriptions
+
+        fetched = await enrich_descriptions(client, all_jobs)
+        if fetched:
+            print(f"📄 Fetched {fetched} job descriptions for skill matching")
 
     # Filter by match threshold and salary floor
     salary_floor = get("profile.salary_floor_usd", 0)
@@ -506,8 +517,9 @@ async def scrape_all_sources(location_scope: str = "all") -> list[JobListing]:
     max_age_days = get("job_search.max_age_days", 0)
 
     matched = []
+    title_only_threshold = get("job_search.match_threshold_title_only", threshold)
     for job in _dedupe(all_jobs):
-        if job.match_score < threshold:
+        if job.match_score < (threshold if job.description else title_only_threshold):
             continue
         if job.company.lower() in blacklist:
             continue
