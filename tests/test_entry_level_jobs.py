@@ -444,3 +444,16 @@ def test_lead_and_intermediate_titles(title: str, level: str) -> None:
 )
 def test_new_grad_signal(title: str, description: str, source: str, is_new_grad: bool) -> None:
     assert bool(matching.new_grad_signal(title, description, source)) is is_new_grad
+
+
+def test_daily_html_has_escaped_clickable_links(tmp_path) -> None:
+    from jobpilot.report import write_daily_html
+
+    rows = [{"id": 7, "match_score": 81, "company": "A&B", "title": "AI Engineer <New Grad>",
+             "location": "NYC", "url": 'https://x.com/j?a=1&b="2"', "description": "Python",
+             "skills": ["Python"], "eligible": "yes", "eligible_why": "class of 2025 ok"}]
+    page = write_daily_html(rows, tmp_path / "today.html", 3, 50, "usa").read_text("utf-8")
+    assert 'href="https://x.com/j?a=1&amp;b=&quot;2&quot;"' in page
+    assert "AI Engineer &lt;New Grad&gt;" in page
+    assert "A&amp;B" in page
+    assert "3/50 applied today" in page

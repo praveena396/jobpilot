@@ -156,10 +156,15 @@ def today(
     ),
     limit: int = typer.Option(0, "--limit", "-n", help="Jobs to list (default: today's target)"),
     scan_first: bool = typer.Option(True, "--scan/--no-scan", help="Scan job boards first"),
+    open_page: bool = typer.Option(True, "--open/--no-open", help="Open the list in your browser"),
 ):
-    """Today's list of fresh entry-level jobs to apply to, with a CSV of links."""
+    """Today's list of fresh entry-level jobs to apply to, as a web page and CSV of links."""
     import csv
+    import webbrowser
     from datetime import date
+
+    from rich.style import Style
+    from rich.text import Text
 
     from jobpilot import get, get_root
     from jobpilot.db import get_daily_queue, get_todays_application_count
@@ -242,7 +247,9 @@ def today(
     marks = {"yes": "[green]yes[/green]", "likely": "likely", "unknown": "[dim]?[/dim]"}
     for r in rows:
         skills = ", ".join(r["skills"][:4]) if r["description"] else "[dim](title only)[/dim]"
-        cells = [str(r["id"]), str(r["match_score"]), r["company"], r["title"],
+        # Ctrl+click opens the job in terminals that support links (e.g. Windows Terminal)
+        role = Text(r["title"], style=Style(link=r["url"])) if r["url"] else r["title"]
+        cells = [str(r["id"]), str(r["match_score"]), r["company"], role,
                  r["location"] or "", marks.get(r["eligible"], "?")]
         table.add_row(*cells, *([skills] if show_skills else []))
     console.print(table)
@@ -253,13 +260,25 @@ def today(
     with out_path.open("w", newline="", encoding="utf-8-sig") as f:  # Excel-friendly
         writer = csv.writer(f)
         writer.writerow(["id", "score", "level", "company", "title", "location", "source",
-                         "grad_year_eligible", "why", "matched_skills", "url"])
+                         "grad_year_eligible", "why", "matched_skills", "open", "url"])
         for r in rows:
+            # Excel turns this formula into a clickable link
+            url = r["url"].replace('"', "%22")
+            link = f'=HYPERLINK("{url}","Open")' if url else ""
             writer.writerow([r["id"], r["match_score"], r["level"], r["company"], r["title"],
                              r["location"], r["source"], r["eligible"], r["eligible_why"],
-                             "; ".join(r["skills"]), r["url"]])
+                             "; ".join(r["skills"]), link, r["url"]])
 
-    console.print(f"\n📄 Links saved to [bold]{out_path}[/bold]")
+    from jobpilot.report import write_daily_html
+
+    html_path = write_daily_html(rows, out_path.with_suffix(".html"), done, target, location_scope)
+    console.print(f"\n🌐 Clickable list: [bold]{html_path}[/bold]")
+    console.print(f"📄 Spreadsheet:    [bold]{out_path}[/bold]")
+    if open_page:
+        try:
+            webbrowser.open(html_path.resolve().as_uri())
+        except Exception:  # noqa: BLE001 - no browser available is fine
+            pass
     console.print("✅ After applying:  [bold]jobpilot applied <ID> [<ID> ...][/bold]")
     console.print("🚫 Not a fit:       [bold]jobpilot skip <ID> [<ID> ...][/bold]")
 
