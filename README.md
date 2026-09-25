@@ -77,6 +77,23 @@ Settings in `job_search` (config/settings.yaml):
 - `linkedin.experience_levels` — LinkedIn filter: 1=Internship, 2=Entry level, 3=Associate
 - `greenhouse_companies` / `lever_companies` / `ashby_companies` — add more company boards by slug
 
+### How jobs are matched to your resume
+
+Each job gets a 0-100 score (`jobpilot/matching.py`); only jobs at or above
+`job_search.match_threshold` (55) are shown:
+
+- **Title (0-45):** matches one of `profile.job_titles` and/or contains one of your
+  `profile.focus_keywords` (e.g. "ML", "AI", "backend"). Titles with any
+  `job_search.exclude_title_keywords` (e.g. "java", "frontend", "analyst") score 0.
+- **Skills (0-50):** your skills that the job description asks for. `profile.core_skills` count
+  most. The rest come from your resume: `profile.resume_path` (.pdf/.docx/.txt) plus the
+  tech stack, work history, projects and achievements in your config.
+- **Level (-20 to +15):** entry level scores highest.
+
+Job descriptions are fetched from Greenhouse, Lever, Ashby and LinkedIn (up to
+`job_search.linkedin.max_descriptions` per scan), so skills can be compared. Other sources are
+scored on the title only. `jobpilot today` shows which of your skills each job asks for.
+
 ## ATS Score > 90 Strategy
 
 - Keywords extracted from JD and matched against your real skills

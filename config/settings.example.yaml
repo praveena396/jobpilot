@@ -38,8 +38,15 @@ profile:
   education: []
   certifications: []
 
+  # --- Resume-based matching ---
+  resume_path: ""          # optional: path to your resume (.pdf/.docx/.txt)
+  core_skills: []          # e.g. ["Python", "PyTorch", "FastAPI"] (see SKILL_VOCAB in matching.py)
+  focus_keywords: []       # title words for your area, e.g. ["backend", "ml", "ai"]
+
 job_search:
-  match_threshold: 70  # minimum skill overlap %
+  match_threshold: 55  # 0-100, see jobpilot/matching.py for how it's scored
+  # Job titles containing any of these are never shown
+  exclude_title_keywords: []  # e.g. ["java", "frontend", "sales", "manager"]
   max_applications_per_day: 50  # daily target used by `jobpilot today`
   # --- New grad / entry-level focus ---
   entry_level_only: true      # drop senior/staff/manager roles
@@ -51,6 +58,7 @@ job_search:
     experience_levels: [2, 3]  # 1=Internship 2=Entry level 3=Associate 4=Mid-Senior
     max_roles: 8               # how many job_titles to search on LinkedIn
     pages_per_search: 3
+    max_descriptions: 120  # job descriptions to fetch per scan (for skill matching)
   # Extra company job boards (slug from the board URL), added to the built-in lists
   greenhouse_companies: []    # boards.greenhouse.io/<slug>
   lever_companies: []         # jobs.lever.co/<slug>

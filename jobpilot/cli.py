@@ -161,7 +161,14 @@ def today(
 
     from jobpilot import get, get_root
     from jobpilot.db import get_daily_queue, get_todays_application_count
-    from jobpilot.scraper.jobs import SENIOR_LEVELS, _location_matches_scope, scrape_all_sources
+    from jobpilot.matching import score_job
+    from jobpilot.scraper.jobs import (
+        SENIOR_LEVELS,
+        _location_matches_scope,
+        detect_level,
+        min_years_required,
+        scrape_all_sources,
+    )
     from rich.table import Table
 
     location_scope = _normalize_scope(location)
@@ -177,34 +184,49 @@ def today(
         console.print(f"🔍 Scanning {location_scope} jobs...")
         asyncio.run(scrape_all_sources(location_scope))
 
-    candidates = get_daily_queue(
-        min_score=get("job_search.match_threshold", 35),
-        max_age_days=get("job_search.queue_max_age_days", 7),
-        limit=limit * 10,
-    )
-    rows = [
-        r for r in candidates
-        if r["level"] not in SENIOR_LEVELS
-        and (r["level"] != "INTERN" or get("job_search.include_internships", False))
-        and _location_matches_scope(r["location"], location_scope)
-    ][:limit]
+    # Re-score everything against your current resume/config, so older rows stay accurate
+    threshold = get("job_search.match_threshold", 55)
+    max_years = get("job_search.max_years_experience", 2)
+    rows = []
+    for r in get_daily_queue(
+        min_score=0, max_age_days=get("job_search.queue_max_age_days", 7), limit=5000
+    ):
+        if not _location_matches_scope(r["location"], location_scope):
+            continue
+        desc = r["description"] or ""
+        level = detect_level(r["title"], desc)
+        if level in SENIOR_LEVELS or (
+            level == "INTERN" and not get("job_search.include_internships", False)
+        ):
+            continue
+        years = min_years_required(desc)
+        if years is not None and years > max_years:
+            continue
+        score, skills = score_job(r["title"], desc, level)
+        if score >= threshold:
+            rows.append({**r, "level": level, "match_score": score, "skills": skills})
+    rows.sort(key=lambda r: r["match_score"], reverse=True)
+    rows = rows[:limit]
 
     if not rows:
-        console.print("No new jobs in the queue. Try `jobpilot today all` or widen job_titles.")
+        console.print(
+            f"No jobs scored {threshold}+ yet. Lower job_search.match_threshold, "
+            "raise max_age_days, or try `jobpilot today all`."
+        )
         return
 
     table = Table(title=f"🎯 Apply today — {done}/{target} done, {len(rows)} queued")
     table.add_column("ID", style="dim", width=5)
     table.add_column("Score", width=5, style="green")
-    table.add_column("Level", width=6)
     table.add_column("Company", width=16, style="cyan")
-    table.add_column("Role", width=34)
-    table.add_column("Location", width=18)
-    table.add_column("Source", width=9)
+    table.add_column("Role", width=32)
+    table.add_column("Location", width=14)
+    table.add_column("Your skills it asks for", width=30)
     for r in rows:
+        skills = ", ".join(r["skills"][:5]) if r["description"] else "(title only — no JD)"
         table.add_row(
-            str(r["id"]), str(r["match_score"]), r["level"] or "?",
-            r["company"][:16], r["title"][:34], (r["location"] or "")[:18], r["source"],
+            str(r["id"]), str(r["match_score"]), r["company"][:16], r["title"][:32],
+            (r["location"] or "")[:14], skills,
         )
     console.print(table)
 
@@ -213,10 +235,11 @@ def today(
     out_path = out_dir / f"{date.today().isoformat()}_{location_scope}.csv"
     with out_path.open("w", newline="", encoding="utf-8-sig") as f:  # Excel-friendly
         writer = csv.writer(f)
-        writer.writerow(["id", "score", "level", "company", "title", "location", "source", "url"])
+        writer.writerow(["id", "score", "level", "company", "title", "location", "source",
+                         "matched_skills", "url"])
         for r in rows:
             writer.writerow([r["id"], r["match_score"], r["level"], r["company"], r["title"],
-                             r["location"], r["source"], r["url"]])
+                             r["location"], r["source"], "; ".join(r["skills"]), r["url"]])
 
     console.print(f"\n📄 Links saved to [bold]{out_path}[/bold]")
     console.print("✅ After applying:  [bold]jobpilot applied <ID> [<ID> ...][/bold]")

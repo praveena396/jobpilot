@@ -216,8 +216,44 @@ profile:
       dates: "Jun - Aug 2023"
       description: "React.js, Node.js/Express, MongoDB, Firebase | 1000+ users, 40% workload reduction"
 
+  # --- Resume-based matching ---
+  # Optional: your resume file (.pdf/.docx/.txt). Skills are read from it + this profile.
+  resume_path: ""
+  # Skills that define you. Jobs asking for these rank highest. Names from
+  # SKILL_VOCAB in jobpilot/matching.py (leave empty to use every skill found in your resume).
+  core_skills:
+    - "Python"
+    - "PyTorch"
+    - "TensorFlow"
+    - "Machine Learning"
+    - "Deep Learning"
+    - "LLM"
+    - "Generative AI"
+    - "LangChain"
+    - "Fine-tuning"
+    - "Model Inference"
+    - "ONNX"
+    - "TensorRT"
+    - "FastAPI"
+    - "Celery"
+    - "Redis"
+    - "Docker"
+    - "Kubernetes"
+    - "AWS"
+    - "Distributed Systems"
+  # Words in a job title that mark your area. Titles with these rank above generic ones.
+  focus_keywords: ["ai", "ml", "machine learning", "llm", "genai", "gen ai", "generative ai",
+                   "mlops", "deep learning", "nlp", "computer vision", "inference", "python",
+                   "backend"]
+
 job_search:
-  match_threshold: 35
+  match_threshold: 55  # 0-100, see jobpilot/matching.py for how it's scored
+  # Job titles containing any of these are never shown
+  exclude_title_keywords: ["java", ".net", "c#", "php", "ios", "android", "flutter", "angular",
+                           "frontend", "front end", "front-end", "qa", "tester", "test engineer",
+                           "sdet", "sap", "network", "hardware", "embedded", "mechanical",
+                           "electrical", "civil", "sales", "support", "analyst", "recruiter",
+                           "consultant", "technician", "mainframe", "manager", "director"]
   max_applications_per_day: 50  # daily target used by `jobpilot today`
   # --- New grad / entry-level focus ---
   entry_level_only: true      # drop senior/staff/manager roles
@@ -229,6 +265,7 @@ job_search:
     experience_levels: [2, 3]  # 1=Internship 2=Entry level 3=Associate 4=Mid-Senior
     max_roles: 8               # how many job_titles to search on LinkedIn
     pages_per_search: 3
+    max_descriptions: 120  # job descriptions to fetch per scan (for skill matching)
   # Extra company job boards (slug from the board URL), added to the built-in lists
   greenhouse_companies: []    # boards.greenhouse.io/<slug>
   lever_companies: []         # jobs.lever.co/<slug>
