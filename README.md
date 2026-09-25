@@ -33,6 +33,9 @@ jobpilot daemon
 |---------|-------------|
 | `jobpilot init` | Create config from template |
 | `jobpilot profile <url>` | Scrape LinkedIn and store profile |
+| `jobpilot today [LOCATION] [-n N]` | Scan, then list today's fresh entry-level jobs + save links to CSV |
+| `jobpilot applied ID [ID ...]` | Mark jobs you applied to yourself (counts toward the daily target) |
+| `jobpilot skip ID [ID ...]` | Hide jobs from the daily queue |
 | `jobpilot scan` | Scan all job boards for matches |
 | `jobpilot apply [--limit N]` | Auto-apply to top N matched jobs |
 | `jobpilot resume [JD_TEXT] -t TITLE -c COMPANY` | Generate a resume for a specific job |
@@ -55,6 +58,24 @@ jobpilot daemon
 5. **Auto-Apply** — Fills Greenhouse/Lever/generic forms via Playwright
 6. **Tracking** — SQLite database tracks all applications, follow-ups, statuses
 7. **Notifications** — Telegram, email, or desktop alerts for new matches
+
+## Daily New Grad / Entry-Level Workflow
+
+```bash
+jobpilot today india      # or: bangalore / usa / all
+# open the links in output/daily/<date>_<location>.csv and apply
+jobpilot applied 12 15 18 # track what you applied to (e.g. 12/50 today)
+jobpilot skip 20          # not a fit, don't show again
+```
+
+Settings in `job_search` (config/settings.yaml):
+
+- `max_applications_per_day` — daily target (50)
+- `entry_level_only` — drop senior / staff / manager roles and roles asking for more than
+  `max_years_experience` years (parsed from the job description when available)
+- `max_age_days` — only keep jobs posted in the last N days (LinkedIn uses its "past 24h" filter)
+- `linkedin.experience_levels` — LinkedIn filter: 1=Internship, 2=Entry level, 3=Associate
+- `greenhouse_companies` / `lever_companies` / `ashby_companies` — add more company boards by slug
 
 ## ATS Score > 90 Strategy
 
@@ -84,6 +105,9 @@ Edit `config/settings.yaml`:
 
 - **Greenhouse** — stripe, databricks, anthropic, openai, figma, notion, airbnb, coinbase, discord, plaid, ramp
 - **Lever** — netflix
-- **LinkedIn** — public job search (no API key needed)
+- **Ashby** — openai, notion, ramp, linear, perplexity, elevenlabs, cursor
+- **LinkedIn** — public job search with Entry level / Associate + past-24h filters, paginated
+- **SimplifyJobs New-Grad-Positions** — community new grad list (US/Canada/UK; `usa` and `all` scans)
+- **Naukri, thejob.dev** — India (`india`, `bangalore` and `all` scans)
 
 Add more companies by editing `GREENHOUSE_COMPANIES` / `LEVER_COMPANIES` in `jobpilot/scraper/jobs.py`.
