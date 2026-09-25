@@ -1,7 +1,7 @@
 """Database layer — SQLite for application tracking."""
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from jobpilot import get, get_root
@@ -163,3 +163,52 @@ def get_pending_followups() -> list[dict]:
            ORDER BY a.follow_up_date"""
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_daily_queue(min_score: int, max_age_days: int, limit: int) -> list[dict]:
+    """Recently discovered jobs you haven't applied to or skipped, best first."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT j.* FROM jobs j
+           LEFT JOIN applications a ON j.id = a.job_id
+           WHERE a.id IS NULL
+           AND j.status NOT IN ('skipped', 'applied')
+           AND j.match_score >= ?
+           AND j.discovered_at >= datetime('now', ?)
+           ORDER BY j.match_score DESC, j.discovered_at DESC
+           LIMIT ?""",
+        (min_score, f"-{int(max_age_days)} days", limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_job(job_id: int) -> dict | None:
+    row = get_db().execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def mark_job_applied(job_id: int, follow_up_days: int = 7, notes: str = "") -> int | None:
+    """Record a manual application. Returns the application id (None if already applied)."""
+    db = get_db()
+    existing = db.execute(
+        "SELECT id FROM applications WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    if existing:
+        return None
+    follow_up = (datetime.now() + timedelta(days=follow_up_days)).strftime("%Y-%m-%d")
+    app_id = insert_application({
+        "job_id": job_id,
+        "resume_version": "manual",
+        "cover_letter_path": "",
+        "status": "applied",
+        "follow_up_date": follow_up,
+        "notes": notes,
+    })
+    set_job_status(job_id, "applied")
+    return app_id
+
+
+def set_job_status(job_id: int, status: str):
+    db = get_db()
+    db.execute("UPDATE jobs SET status = ? WHERE id = ?", (status, job_id))
+    db.commit()

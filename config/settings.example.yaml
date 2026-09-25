@@ -3,7 +3,7 @@
 
 profile:
   linkedin_url: ""
-  target_level: "L5"  # L3/L4/L5/L6/L7
+  target_level: "L3"  # L3/L4/L5/L6/L7 (L3 = new grad / entry level)
   target_roles:
     - "Backend Engineer"
     - "Platform Engineer"
@@ -40,7 +40,21 @@ profile:
 
 job_search:
   match_threshold: 70  # minimum skill overlap %
-  max_applications_per_day: 10
+  max_applications_per_day: 50  # daily target used by `jobpilot today`
+  # ── New grad / entry-level focus ──
+  entry_level_only: true      # drop senior/staff/manager roles
+  max_years_experience: 2     # drop roles asking for more than this
+  include_internships: false
+  max_age_days: 1             # only jobs posted in the last N days
+  queue_max_age_days: 7       # how long unapplied jobs stay in `jobpilot today`
+  linkedin:
+    experience_levels: [2, 3]  # 1=Internship 2=Entry level 3=Associate 4=Mid-Senior
+    max_roles: 8               # how many job_titles to search on LinkedIn
+    pages_per_search: 3
+  # Extra company job boards (slug from the board URL), added to the built-in lists
+  greenhouse_companies: []    # boards.greenhouse.io/<slug>
+  lever_companies: []         # jobs.lever.co/<slug>
+  ashby_companies: []         # jobs.ashbyhq.com/<slug>
   min_company_stage: "series_c"  # series_c / public / revenue_100m
   check_interval_minutes: 30
   sources:

@@ -35,12 +35,7 @@ def scan(
     from jobpilot.scraper.jobs import scrape_all_sources
     from jobpilot.notify import notify_matched_jobs
 
-    location_scope = location.lower().strip()
-    aliases = {"bengaluru": "bangalore", "us": "usa", "united-states": "usa"}
-    location_scope = aliases.get(location_scope, location_scope)
-    if location_scope not in {"all", "bangalore", "india", "usa"}:
-        console.print("❌ Location must be one of: bangalore, india, usa, all")
-        raise typer.Exit(2)
+    location_scope = _normalize_scope(location)
 
     console.print(f"🔍 Scanning {location_scope} jobs...")
     jobs = asyncio.run(scrape_all_sources(location_scope))
@@ -142,6 +137,127 @@ def links(limit: int = typer.Argument(50, help="Max number of links to show")):
         console.print(f"   [link]{r['url']}[/link]")
 
     console.print(f"\nTotal: {len(rows)} jobs")
+
+
+def _normalize_scope(location: str) -> str:
+    location_scope = location.lower().strip()
+    aliases = {"bengaluru": "bangalore", "us": "usa", "united-states": "usa"}
+    location_scope = aliases.get(location_scope, location_scope)
+    if location_scope not in {"all", "bangalore", "india", "usa"}:
+        console.print("❌ Location must be one of: bangalore, india, usa, all")
+        raise typer.Exit(2)
+    return location_scope
+
+
+@app.command()
+def today(
+    location: str = typer.Argument("all", help="Location scope: bangalore, india, usa, or all"),
+    limit: int = typer.Option(0, "--limit", "-n", help="Jobs to list (default: today's target)"),
+    scan_first: bool = typer.Option(True, "--scan/--no-scan", help="Scan job boards first"),
+):
+    """Today's list of fresh entry-level jobs to apply to, with a CSV of links."""
+    import csv
+    from datetime import date
+
+    from jobpilot import get, get_root
+    from jobpilot.db import get_daily_queue, get_todays_application_count
+    from jobpilot.scraper.jobs import SENIOR_LEVELS, _location_matches_scope, scrape_all_sources
+    from rich.table import Table
+
+    location_scope = _normalize_scope(location)
+    target = get("job_search.max_applications_per_day", 50)
+    done = get_todays_application_count()
+    remaining = max(target - done, 0)
+    limit = limit or remaining
+    if limit == 0:
+        console.print(f"🎉 Daily target reached: {done}/{target} applications today.")
+        return
+
+    if scan_first:
+        console.print(f"🔍 Scanning {location_scope} jobs...")
+        asyncio.run(scrape_all_sources(location_scope))
+
+    candidates = get_daily_queue(
+        min_score=get("job_search.match_threshold", 35),
+        max_age_days=get("job_search.queue_max_age_days", 7),
+        limit=limit * 10,
+    )
+    rows = [
+        r for r in candidates
+        if r["level"] not in SENIOR_LEVELS
+        and (r["level"] != "INTERN" or get("job_search.include_internships", False))
+        and _location_matches_scope(r["location"], location_scope)
+    ][:limit]
+
+    if not rows:
+        console.print("No new jobs in the queue. Try `jobpilot today all` or widen job_titles.")
+        return
+
+    table = Table(title=f"🎯 Apply today — {done}/{target} done, {len(rows)} queued")
+    table.add_column("ID", style="dim", width=5)
+    table.add_column("Score", width=5, style="green")
+    table.add_column("Level", width=6)
+    table.add_column("Company", width=16, style="cyan")
+    table.add_column("Role", width=34)
+    table.add_column("Location", width=18)
+    table.add_column("Source", width=9)
+    for r in rows:
+        table.add_row(
+            str(r["id"]), str(r["match_score"]), r["level"] or "?",
+            r["company"][:16], r["title"][:34], (r["location"] or "")[:18], r["source"],
+        )
+    console.print(table)
+
+    out_dir = get_root() / "output" / "daily"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{date.today().isoformat()}_{location_scope}.csv"
+    with out_path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["id", "score", "level", "company", "title", "location", "source", "url"])
+        for r in rows:
+            writer.writerow([r["id"], r["match_score"], r["level"], r["company"], r["title"],
+                             r["location"], r["source"], r["url"]])
+
+    console.print(f"\n📄 Links saved to [bold]{out_path}[/bold]")
+    console.print("✅ After applying:  [bold]jobpilot applied <ID> [<ID> ...][/bold]")
+    console.print("🚫 Not a fit:       [bold]jobpilot skip <ID> [<ID> ...][/bold]")
+
+
+@app.command()
+def applied(
+    job_ids: list[int] = typer.Argument(..., help="Job IDs from `jobpilot today`"),
+    follow_up_days: int = typer.Option(7, help="Days until a follow-up is due"),
+):
+    """Mark jobs as applied (for jobs you applied to yourself)."""
+    from jobpilot import get
+    from jobpilot.db import get_job, get_todays_application_count, mark_job_applied
+
+    for job_id in job_ids:
+        job = get_job(job_id)
+        if not job:
+            console.print(f"❌ No job with ID {job_id}")
+            continue
+        if mark_job_applied(job_id, follow_up_days) is None:
+            console.print(f"⏭️  Already applied: {job['company']} — {job['title']}")
+        else:
+            console.print(f"✅ Applied: {job['company']} — {job['title']}")
+
+    target = get("job_search.max_applications_per_day", 50)
+    console.print(f"\n📊 Today: {get_todays_application_count()}/{target}")
+
+
+@app.command()
+def skip(job_ids: list[int] = typer.Argument(..., help="Job IDs to hide from the queue")):
+    """Hide jobs from the daily queue."""
+    from jobpilot.db import get_job, set_job_status
+
+    for job_id in job_ids:
+        job = get_job(job_id)
+        if not job:
+            console.print(f"❌ No job with ID {job_id}")
+            continue
+        set_job_status(job_id, "skipped")
+        console.print(f"🚫 Skipped: {job['company']} — {job['title']}")
 
 
 @app.command()
