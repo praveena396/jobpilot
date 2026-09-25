@@ -211,7 +211,7 @@ def today(
     out_dir = get_root() / "output" / "daily"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{date.today().isoformat()}_{location_scope}.csv"
-    with out_path.open("w", newline="") as f:
+    with out_path.open("w", newline="", encoding="utf-8-sig") as f:  # Excel-friendly
         writer = csv.writer(f)
         writer.writerow(["id", "score", "level", "company", "title", "location", "source", "url"])
         for r in rows:

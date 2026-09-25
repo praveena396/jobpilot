@@ -41,7 +41,7 @@ profile:
 job_search:
   match_threshold: 70  # minimum skill overlap %
   max_applications_per_day: 50  # daily target used by `jobpilot today`
-  # ── New grad / entry-level focus ──
+  # --- New grad / entry-level focus ---
   entry_level_only: true      # drop senior/staff/manager roles
   max_years_experience: 2     # drop roles asking for more than this
   include_internships: false
