@@ -59,7 +59,7 @@ job_search:
   hide_ineligible_grad_years: true  # hide "Class of 2026", "2027 Start", "currently enrolled" roles
   max_years_experience: 2     # drop roles asking for more than this
   include_internships: false
-  max_age_days: 1             # only jobs posted in the last N days
+  max_age_days: 3             # only jobs posted in the last N days (up to 7 for more)
   queue_max_age_days: 7       # how long unapplied jobs stay in `jobpilot today`
   linkedin:
     experience_levels: [2, 3]  # 1=Internship 2=Entry level 3=Associate 4=Mid-Senior

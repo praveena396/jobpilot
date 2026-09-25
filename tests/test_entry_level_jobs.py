@@ -394,3 +394,36 @@ def test_enrich_descriptions_rescores(ml_profile, monkeypatch) -> None:
     assert job.description.startswith("Python, PyTorch")
     assert job.level == "L3"
     assert job.match_score > 80
+
+
+@pytest.mark.parametrize(
+    ("location", "scope", "expected"),
+    [
+        ("New York, NY", "usa", True),
+        ("Thousand Oaks, CA", "usa", True),
+        ("Remote in USA", "usa", True),
+        ("Remote", "usa", True),
+        ("San Francisco, Remote", "usa", True),
+        ("Paris, France, Remote", "usa", False),
+        ("Toronto, ON, Canada", "usa", False),
+        ("Bengaluru, Karnataka, India", "usa", False),
+        ("Greater Bengaluru Area", "india", True),
+        ("Remote - India", "india", True),
+        ("Seattle, Remote", "india", False),
+    ],
+)
+def test_location_scope(location: str, scope: str, expected: bool) -> None:
+    assert jobs_mod._location_matches_scope(location, scope) is expected
+
+
+@pytest.mark.parametrize(
+    ("title", "level"),
+    [
+        ("Applied AI ML Lead", "L5"),
+        ("Lead AI/ML Engineer", "L5"),
+        ("Machine Learning Engineer - III", "L5"),
+        ("Intermediate AI Engineer", "L4"),
+    ],
+)
+def test_lead_and_intermediate_titles(title: str, level: str) -> None:
+    assert detect_level(title) == level

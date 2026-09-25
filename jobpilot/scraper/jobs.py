@@ -36,8 +36,8 @@ LEVEL_PATTERNS = {
         r"|engineer\s*-?\s*(?:I|1)\b|developer\s*-?\s*(?:I|1)\b|fresh|graduate"
         r"|early\s*career|university|campus|college\s*hire|trainee\s*engineer)"
     ),
-    "L4": r"\b(?:mid|L4|SDE\s*II|engineer\s*II|MTS\s*1|MTS\s*2)\b",
-    "L5": r"\b(?:senior|sr\.?|L5|SDE\s*III|engineer\s*III|MTS\s*3|lead\s+engineer)\b",
+    "L4": r"\b(?:mid|intermediate|L4|SDE\s*II|engineer\s*-?\s*II|MTS\s*1|MTS\s*2|II)\b",
+    "L5": r"\b(?:senior|sr\.?|L5|SDE\s*III|engineer\s*-?\s*III|MTS\s*3|lead|III)\b",
     "L6": r"\b(?:staff|L6|principal\s*engineer|tech\s*lead|architect)\b",
     "L7": r"\b(?:principal|L7|distinguished|fellow|director\s*of\s*engineering)\b",
     "INTERN": r"\b(?:intern|internship|co.op|trainee|apprentice)\b",
@@ -559,21 +559,49 @@ async def scrape_all_sources(location_scope: str = "all") -> list[JobListing]:
     return matched
 
 
+_US_STATES = (
+    "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH "
+    "NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC"
+).split()
+_US_RE = re.compile(
+    r"united states|\busa?\b|u\.s\.|\bnyc\b|new york|california|texas|washington|seattle|"
+    r"san francisco|\bsf\b|bay area|boston|chicago|austin|los angeles|\bla\b|denver|atlanta|"
+    r",\s*(?:" + "|".join(_US_STATES) + r")\b",
+    re.IGNORECASE,
+)
+_INDIA_RE = re.compile(
+    r"india|bangalore|bengaluru|hyderabad|mumbai|chennai|pune|noida|gurgaon|gurugram|"
+    r"karnataka|maharashtra|telangana|tamil nadu|kerala|kochi|thiruvananthapuram|delhi|kolkata|"
+    r"ahmedabad|coimbatore|haryana",
+    re.IGNORECASE,
+)
+_OTHER_COUNTRY_RE = re.compile(
+    r"canada|toronto|vancouver|montreal|\buk\b|united kingdom|london|england|ireland|dublin|"
+    r"france|paris|germany|berlin|munich|netherlands|amsterdam|spain|madrid|poland|warsaw|"
+    r"switzerland|zurich|israel|tel aviv|singapore|japan|tokyo|korea|seoul|china|beijing|"
+    r"shanghai|australia|sydney|melbourne|mexico|brazil|argentina|emea|apac|europe|latam",
+    re.IGNORECASE,
+)
+
+
 def _location_matches_scope(location: str, location_scope: str) -> bool:
-    """Keep location-specific scans from mixing unrelated job results."""
+    """Keep location-specific scans from mixing unrelated job results.
+
+    A job matches if it names a place in the scope. "Remote" alone only matches when
+    no other country is named ("Paris, France, Remote" is not a US job).
+    """
     if location_scope == "all":
         return True
-    normalized = (location or "").lower()
+    loc = location or ""
     if location_scope == "bangalore":
-        return any(term in normalized for term in ("bangalore", "bengaluru", "karnataka"))
+        return re.search(r"bangalore|bengaluru|karnataka", loc, re.IGNORECASE) is not None
     if location_scope == "india":
-        return any(term in normalized for term in (
-            "india", "bangalore", "bengaluru", "hyderabad", "mumbai", "chennai",
-            "pune", "noida", "gurgaon", "gurugram", "karnataka", "remote",
-        ))
-    if location_scope == "usa":
-        return any(term in normalized for term in (
-            "united states", "usa", "u.s.", "new york", "california", "texas",
-            "seattle", "boston", "chicago", "austin", "remote",
-        ))
-    return True
+        home, others = _INDIA_RE, (_US_RE, _OTHER_COUNTRY_RE)
+    elif location_scope == "usa":
+        home, others = _US_RE, (_INDIA_RE, _OTHER_COUNTRY_RE)
+    else:
+        return True
+    if home.search(loc):
+        return True
+    remote = re.search(r"remote|anywhere", loc, re.IGNORECASE)
+    return bool(remote) and not any(rx.search(loc) for rx in others)

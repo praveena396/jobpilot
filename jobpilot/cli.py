@@ -225,20 +225,22 @@ def today(
         return
 
     table = Table(title=f"🎯 Apply today — {done}/{target} done, {len(rows)} queued")
-    table.add_column("ID", style="dim", width=5)
-    table.add_column("Score", width=5, style="green")
-    table.add_column("Company", width=16, style="cyan")
-    table.add_column("Role", width=32)
-    table.add_column("Location", width=14)
-    table.add_column("Grad yr ok?", width=11)
-    table.add_column("Your skills it asks for", width=28)
-    marks = {"yes": "[green]✓ yes[/green]", "likely": "likely", "unknown": "[dim]?[/dim]"}
+    # ID and fit must always be readable (you type the ID into `jobpilot applied`)
+    table.add_column("ID", style="bold", no_wrap=True, min_width=4)
+    table.add_column("Fit", style="green", no_wrap=True, min_width=3)
+    table.add_column("Company", style="cyan", max_width=12, no_wrap=True, overflow="ellipsis")
+    table.add_column("Role", ratio=3, min_width=18)
+    table.add_column("Location", max_width=11, no_wrap=True, overflow="ellipsis")
+    table.add_column("Grad", no_wrap=True, min_width=6)
+    show_skills = console.width >= 110  # narrow terminals: skills are still in the CSV
+    if show_skills:
+        table.add_column("Your skills", ratio=2, max_width=30)
+    marks = {"yes": "[green]yes[/green]", "likely": "likely", "unknown": "[dim]?[/dim]"}
     for r in rows:
-        skills = ", ".join(r["skills"][:5]) if r["description"] else "(title only — no JD)"
-        table.add_row(
-            str(r["id"]), str(r["match_score"]), r["company"][:16], r["title"][:32],
-            (r["location"] or "")[:14], marks.get(r["eligible"], "?"), skills,
-        )
+        skills = ", ".join(r["skills"][:4]) if r["description"] else "[dim](title only)[/dim]"
+        cells = [str(r["id"]), str(r["match_score"]), r["company"], r["title"],
+                 r["location"] or "", marks.get(r["eligible"], "?")]
+        table.add_row(*cells, *([skills] if show_skills else []))
     console.print(table)
 
     out_dir = get_root() / "output" / "daily"
