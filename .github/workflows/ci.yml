@@ -1,0 +1,35 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  analyzer:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install fastapi "uvicorn[standard]" pydantic pyyaml httpx pytest ruff mypy
+      - name: Lint
+        run: ruff check jobpilot/analyzer jobpilot/api tests/test_analyzer.py tests/test_api.py
+      - name: Type check
+        run: mypy jobpilot/analyzer jobpilot/api
+      - name: Tests
+        run: pytest tests/test_analyzer.py tests/test_api.py -q
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+      - run: npm run build

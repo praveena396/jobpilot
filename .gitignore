@@ -27,3 +27,11 @@ output/
 *.egg-info/
 *.pdf
 *.docx
+
+.venv/
+web/node_modules/
+web/dist/
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+*.db

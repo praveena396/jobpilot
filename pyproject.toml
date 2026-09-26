@@ -11,6 +11,8 @@ version = "1.0.0"
 description = "AI Job Auto-Apply Agent — scrape, match, generate resumes, auto-apply"
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
     "playwright>=1.40",
     "beautifulsoup4>=4.12",
     "httpx>=0.25",
@@ -32,6 +34,7 @@ dev = ["ruff", "mypy", "pytest", "pytest-asyncio"]
 
 [project.scripts]
 jobpilot = "jobpilot.cli:app"
+jobpilot-match = "jobpilot.analyzer.cli:main"
 
 [tool.ruff]
 line-length = 100
