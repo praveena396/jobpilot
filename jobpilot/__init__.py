@@ -20,7 +20,7 @@ def load_config(path: Path | None = None) -> dict:
         raise FileNotFoundError(
             f"Config not found at {cfg_path}. Copy config/settings.example.yaml to config/settings.yaml"
         )
-    with open(cfg_path) as f:
+    with open(cfg_path, encoding="utf-8") as f:
         _CONFIG = yaml.safe_load(f)
     return _CONFIG
 

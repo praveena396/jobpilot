@@ -153,9 +153,35 @@ Settings in `job_search` (config/settings.yaml):
 - `max_applications_per_day` — daily target (50)
 - `entry_level_only` — drop senior / staff / manager roles and roles asking for more than
   `max_years_experience` years (parsed from the job description when available)
+- `new_grad_only` — only roles that say new grad / graduate / early career / entry level /
+  recent graduates in the title or description (or come from the new grad list)
 - `max_age_days` — only keep jobs posted in the last N days (LinkedIn uses its "past 24h" filter)
 - `linkedin.experience_levels` — LinkedIn filter: 1=Internship, 2=Entry level, 3=Associate
 - `greenhouse_companies` / `lever_companies` / `ashby_companies` — add more company boards by slug
+
+### How jobs are matched to your resume
+
+Each job gets a 0-100 score (`jobpilot/matching.py`); only jobs at or above
+`job_search.match_threshold` (55) are shown:
+
+- **Title (0-45):** matches one of `profile.job_titles` and/or contains one of your
+  `profile.focus_keywords` (e.g. "ML", "AI", "backend"). Titles with any
+  `job_search.exclude_title_keywords` (e.g. "java", "frontend", "analyst") score 0.
+- **Skills (0-50):** your skills that the job description asks for. `profile.core_skills` count
+  most. The rest come from your resume: `profile.resume_path` (.pdf/.docx/.txt) plus the
+  tech stack, work history, projects and achievements in your config.
+- **Level (-20 to +15):** entry level scores highest.
+
+**Graduation year:** set `profile.graduation_date` (e.g. `"2025-05"`). Roles for other classes
+("Class of 2026", "New Grad - December 2026", "2027 Start", "graduating between Dec 2025 and
+Aug 2026", "currently enrolled") are hidden, and `today` shows whether each job is confirmed
+open to your class (`✓ yes`), open to recent grads (`likely`), or doesn't say (`?`).
+
+Job descriptions are fetched from Greenhouse, Lever, Ashby and LinkedIn, and for links on
+aggregator lists that point to Workday, Greenhouse, Lever, Ashby or SmartRecruiters (up to
+`job_search.linkedin.max_descriptions` / `job_search.max_descriptions` per scan), so skills can
+be compared. Jobs without a description are scored on the title only and use the lower
+`match_threshold_title_only`. `jobpilot today` shows which of your skills each job asks for.
 
 ## ATS Score > 90 Strategy
 

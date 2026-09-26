@@ -102,6 +102,14 @@ def insert_job(job: dict) -> int | None:
                :comp_min, :comp_max, :url, :description, :match_score, :posted_at)""",
             job,
         )
+        if cur.rowcount == 0 and job.get("description"):
+            # Seen before without a description: store it now so it can be re-scored
+            db.execute(
+                """UPDATE jobs SET description = :description, level = :level,
+                   match_score = :match_score
+                   WHERE url = :url AND (description IS NULL OR description = '')""",
+                job,
+            )
         db.commit()
         return cur.lastrowid if cur.rowcount > 0 else None
     except sqlite3.Error:

@@ -151,20 +151,34 @@ def _normalize_scope(location: str) -> str:
 
 @app.command()
 def today(
-    location: str = typer.Argument("all", help="Location scope: bangalore, india, usa, or all"),
+    location: str = typer.Argument(
+        None, help="bangalore, india, usa, or all (default: job_search.default_location)"
+    ),
     limit: int = typer.Option(0, "--limit", "-n", help="Jobs to list (default: today's target)"),
     scan_first: bool = typer.Option(True, "--scan/--no-scan", help="Scan job boards first"),
+    open_page: bool = typer.Option(True, "--open/--no-open", help="Open the list in your browser"),
 ):
-    """Today's list of fresh entry-level jobs to apply to, with a CSV of links."""
+    """Today's list of fresh entry-level jobs to apply to, as a web page and CSV of links."""
     import csv
+    import webbrowser
     from datetime import date
+
+    from rich.style import Style
+    from rich.text import Text
 
     from jobpilot import get, get_root
     from jobpilot.db import get_daily_queue, get_todays_application_count
-    from jobpilot.scraper.jobs import SENIOR_LEVELS, _location_matches_scope, scrape_all_sources
+    from jobpilot.matching import grad_eligibility, new_grad_signal, score_job
+    from jobpilot.scraper.jobs import (
+        SENIOR_LEVELS,
+        _location_matches_scope,
+        detect_level,
+        min_years_required,
+        scrape_all_sources,
+    )
     from rich.table import Table
 
-    location_scope = _normalize_scope(location)
+    location_scope = _normalize_scope(location or get("job_search.default_location", "all"))
     target = get("job_search.max_applications_per_day", 50)
     done = get_todays_application_count()
     remaining = max(target - done, 0)
@@ -177,48 +191,94 @@ def today(
         console.print(f"🔍 Scanning {location_scope} jobs...")
         asyncio.run(scrape_all_sources(location_scope))
 
-    candidates = get_daily_queue(
-        min_score=get("job_search.match_threshold", 35),
-        max_age_days=get("job_search.queue_max_age_days", 7),
-        limit=limit * 10,
-    )
-    rows = [
-        r for r in candidates
-        if r["level"] not in SENIOR_LEVELS
-        and (r["level"] != "INTERN" or get("job_search.include_internships", False))
-        and _location_matches_scope(r["location"], location_scope)
-    ][:limit]
+    # Re-score everything against your current resume/config, so older rows stay accurate
+    threshold = get("job_search.match_threshold", 55)
+    title_only_threshold = get("job_search.match_threshold_title_only", threshold)
+    max_years = get("job_search.max_years_experience", 2)
+    rows = []
+    for r in get_daily_queue(
+        min_score=0, max_age_days=get("job_search.queue_max_age_days", 7), limit=5000
+    ):
+        if not _location_matches_scope(r["location"], location_scope):
+            continue
+        desc = r["description"] or ""
+        level = detect_level(r["title"], desc)
+        if level in SENIOR_LEVELS or (
+            level == "INTERN" and not get("job_search.include_internships", False)
+        ):
+            continue
+        years = min_years_required(desc)
+        if years is not None and years > max_years:
+            continue
+        eligible, why = grad_eligibility(r["title"], desc)
+        if eligible == "no" and get("job_search.hide_ineligible_grad_years", True):
+            continue
+        if get("job_search.new_grad_only", False) and not (
+            eligible == "yes" or new_grad_signal(r["title"], desc, r["source"])
+        ):
+            continue
+        score, skills = score_job(r["title"], desc, level)
+        if score >= (threshold if desc else title_only_threshold):
+            rows.append({**r, "level": level, "match_score": score, "skills": skills,
+                         "eligible": eligible, "eligible_why": why})
+    # Confirmed-eligible jobs first among similar scores
+    bonus = {"yes": 8, "likely": 4}
+    rows.sort(key=lambda r: r["match_score"] + bonus.get(r["eligible"], 0), reverse=True)
+    rows = rows[:limit]
 
     if not rows:
-        console.print("No new jobs in the queue. Try `jobpilot today all` or widen job_titles.")
+        console.print(
+            f"No jobs scored {threshold}+ yet. Lower job_search.match_threshold, "
+            "raise max_age_days, or try `jobpilot today all`."
+        )
         return
 
     table = Table(title=f"🎯 Apply today — {done}/{target} done, {len(rows)} queued")
-    table.add_column("ID", style="dim", width=5)
-    table.add_column("Score", width=5, style="green")
-    table.add_column("Level", width=6)
-    table.add_column("Company", width=16, style="cyan")
-    table.add_column("Role", width=34)
-    table.add_column("Location", width=18)
-    table.add_column("Source", width=9)
+    # ID and fit must always be readable (you type the ID into `jobpilot applied`)
+    table.add_column("ID", style="bold", no_wrap=True, min_width=4)
+    table.add_column("Fit", style="green", no_wrap=True, min_width=3)
+    table.add_column("Company", style="cyan", max_width=12, no_wrap=True, overflow="ellipsis")
+    table.add_column("Role", ratio=3, min_width=18)
+    table.add_column("Location", max_width=11, no_wrap=True, overflow="ellipsis")
+    table.add_column("Grad", no_wrap=True, min_width=6)
+    show_skills = console.width >= 110  # narrow terminals: skills are still in the CSV
+    if show_skills:
+        table.add_column("Your skills", ratio=2, max_width=30)
+    marks = {"yes": "[green]yes[/green]", "likely": "likely", "unknown": "[dim]?[/dim]"}
     for r in rows:
-        table.add_row(
-            str(r["id"]), str(r["match_score"]), r["level"] or "?",
-            r["company"][:16], r["title"][:34], (r["location"] or "")[:18], r["source"],
-        )
+        skills = ", ".join(r["skills"][:4]) if r["description"] else "[dim](title only)[/dim]"
+        # Ctrl+click opens the job in terminals that support links (e.g. Windows Terminal)
+        role = Text(r["title"], style=Style(link=r["url"])) if r["url"] else r["title"]
+        cells = [str(r["id"]), str(r["match_score"]), r["company"], role,
+                 r["location"] or "", marks.get(r["eligible"], "?")]
+        table.add_row(*cells, *([skills] if show_skills else []))
     console.print(table)
 
     out_dir = get_root() / "output" / "daily"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{date.today().isoformat()}_{location_scope}.csv"
-    with out_path.open("w", newline="") as f:
+    with out_path.open("w", newline="", encoding="utf-8-sig") as f:  # Excel-friendly
         writer = csv.writer(f)
-        writer.writerow(["id", "score", "level", "company", "title", "location", "source", "url"])
+        writer.writerow(["id", "score", "level", "company", "title", "location", "source",
+                         "grad_year_eligible", "why", "matched_skills", "open", "url"])
         for r in rows:
+            # Excel turns this formula into a clickable link
+            url = r["url"].replace('"', "%22")
+            link = f'=HYPERLINK("{url}","Open")' if url else ""
             writer.writerow([r["id"], r["match_score"], r["level"], r["company"], r["title"],
-                             r["location"], r["source"], r["url"]])
+                             r["location"], r["source"], r["eligible"], r["eligible_why"],
+                             "; ".join(r["skills"]), link, r["url"]])
 
-    console.print(f"\n📄 Links saved to [bold]{out_path}[/bold]")
+    from jobpilot.report import write_daily_html
+
+    html_path = write_daily_html(rows, out_path.with_suffix(".html"), done, target, location_scope)
+    console.print(f"\n🌐 Clickable list: [bold]{html_path}[/bold]")
+    console.print(f"📄 Spreadsheet:    [bold]{out_path}[/bold]")
+    if open_page:
+        try:
+            webbrowser.open(html_path.resolve().as_uri())
+        except Exception:  # noqa: BLE001 - no browser available is fine
+            pass
     console.print("✅ After applying:  [bold]jobpilot applied <ID> [<ID> ...][/bold]")
     console.print("🚫 Not a fit:       [bold]jobpilot skip <ID> [<ID> ...][/bold]")
 

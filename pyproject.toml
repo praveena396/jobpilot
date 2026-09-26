@@ -27,6 +27,7 @@ dependencies = [
     "python-telegram-bot>=20.7",
     "openai>=1.6",
     "fake-useragent>=1.4",
+    "pypdf>=4.0",
 ]
 
 [project.optional-dependencies]

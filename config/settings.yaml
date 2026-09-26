@@ -3,30 +3,34 @@
 profile:
   linkedin_url: "https://www.linkedin.com/in/praveena-ganesan-b84541247/"
   target_level: "L3"  # 1yr industry exp (graduated 2025), not intern
-  job_titles:
+  graduation_date: "2025-05"  # used to hide new grad roles for other classes
+  job_titles:  # LinkedIn searches the first job_search.linkedin.max_roles of these
   - "AI Engineer"
+  - "Software Engineer"
+  - "Machine Learning Engineer"
+  - "Full Stack Engineer"
+  - "Backend Engineer"
+  - "Applied AI Engineer"
+  - "LLM Engineer"
+  - "Forward Deployed Engineer"
   - "AI Developer"
   - "ML Engineer"
-  - "Machine Learning Engineer"
-  - "Applied AI Engineer"
   - "Applied ML Engineer"
   - "AI/ML Engineer"
   - "Generative AI Engineer"
-  - "LLM Engineer"
   - "GenAI Engineer"
+  - "AI Agent Engineer"
   - "Software Engineer - AI"
   - "Software Engineer - ML"
-  - "Backend Engineer"
   - "Python Backend Engineer"
+  - "Python Developer"
   - "Platform Engineer"
   - "MLOps Engineer"
-  - "Machine Learning Platform Engineer"
   - "Inference Engineer"
   - "AI Infrastructure Engineer"
-  - "Software Engineer"
-  - "Developer"
   - "Full Stack Developer"
-
+  - "Frontend Engineer"
+  - "Developer"
   tech_stack:
     - "Python"
     - "C++"
@@ -216,19 +220,82 @@ profile:
       dates: "Jun - Aug 2023"
       description: "React.js, Node.js/Express, MongoDB, Firebase | 1000+ users, 40% workload reduction"
 
+  # --- Resume-based matching ---
+  # Optional: your resume file (.pdf/.docx/.txt). Skills are read from it + this profile.
+  resume_path: "data/resume.pdf"  # copy your resume PDF here (not committed to git)
+  # Skills that define you. Jobs asking for these rank highest. Names from
+  # SKILL_VOCAB in jobpilot/matching.py (leave empty to use every skill found in your resume).
+  core_skills:
+    - "Python"
+    - "LLM"
+    - "Agents"
+    - "RAG"
+    - "Vector DB"
+    - "Embeddings"
+    - "LangGraph"
+    - "MCP"
+    - "Function Calling"
+    - "Gemini API"
+    - "FastAPI"
+    - "React"
+    - "Next.js"
+    - "TypeScript"
+    - "Node.js"
+    - "Full Stack"
+    - "asyncio"
+    - "WebSockets"
+    - "REST APIs"
+    - "Machine Learning"
+    - "NLP"
+    - "TensorFlow"
+    - "Redis"
+    - "MongoDB"
+    - "Docker"
+    - "AWS"
+    - "Azure"
+  # Words in a job title that mark your area. Titles with these rank above generic ones.
+  focus_keywords: ["ai", "ml", "machine learning", "llm", "genai", "gen ai", "generative ai",
+                   "agent", "agents", "agentic", "applied ai", "nlp", "inference", "mlops",
+                   "deep learning", "python", "backend", "full stack", "full-stack",
+                   "forward deployed"]
+
 job_search:
-  match_threshold: 35
+  match_threshold: 55  # 0-100, see jobpilot/matching.py for how it's scored
+  # Jobs whose description couldn't be fetched can't earn skill points; an entry-level
+  # title in your target roles scores 40, so this keeps them without letting junk in.
+  match_threshold_title_only: 40
+  max_descriptions: 300       # descriptions to fetch per scan from Workday/Greenhouse/Lever/...
+  # Job titles containing any of these are never shown
+  exclude_title_keywords: ["java", ".net", "c#", "php", "ios", "android", "flutter", "angular",
+                           "qa", "tester", "test engineer",
+                           "sdet", "sap", "network", "hardware", "embedded", "mechanical",
+                           "electrical", "civil", "sales", "support", "analyst", "recruiter",
+                           "consultant", "technician", "mainframe", "manager", "director"]
   max_applications_per_day: 50  # daily target used by `jobpilot today`
-  # ── New grad / entry-level focus ──
+  # --- New grad / entry-level focus ---
+  default_location: "usa"     # used by `jobpilot today` with no location (usa/india/bangalore/all)
   entry_level_only: true      # drop senior/staff/manager roles
+  new_grad_only: true         # only roles that say new grad / graduate / early career /
+                              # entry level / recent grads (title or description)
+  hide_ineligible_grad_years: true  # hide "Class of 2026", "2027 Start", "currently enrolled" roles
   max_years_experience: 2     # drop roles asking for more than this
   include_internships: false
-  max_age_days: 1             # only jobs posted in the last N days
-  queue_max_age_days: 7       # how long unapplied jobs stay in `jobpilot today`
+  max_age_days: 21            # only jobs posted in the last N days (3 weeks)
+  queue_max_age_days: 21      # how long unapplied jobs stay in `jobpilot today`
   linkedin:
     experience_levels: [2, 3]  # 1=Internship 2=Entry level 3=Associate 4=Mid-Senior
     max_roles: 8               # how many job_titles to search on LinkedIn
     pages_per_search: 3
+    # Extra LinkedIn searches (in addition to job_titles) aimed at new grad postings
+    keywords:
+      - "new grad software engineer"
+      - "new grad machine learning engineer"
+      - "new grad AI engineer"
+      - "university graduate software engineer"
+      - "early career software engineer"
+      - "entry level AI engineer"
+      - "recent graduate software engineer"
+    max_descriptions: 200  # job descriptions to fetch per scan (for skill matching)
   # Extra company job boards (slug from the board URL), added to the built-in lists
   greenhouse_companies: []    # boards.greenhouse.io/<slug>
   lever_companies: []         # jobs.lever.co/<slug>

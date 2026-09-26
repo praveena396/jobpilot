@@ -1,6 +1,7 @@
 """Job scraper — monitors LinkedIn, Greenhouse, Lever, and company career pages."""
 
 import asyncio
+import html
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -35,8 +36,8 @@ LEVEL_PATTERNS = {
         r"|engineer\s*-?\s*(?:I|1)\b|developer\s*-?\s*(?:I|1)\b|fresh|graduate"
         r"|early\s*career|university|campus|college\s*hire|trainee\s*engineer)"
     ),
-    "L4": r"\b(?:mid|L4|SDE\s*II|engineer\s*II|MTS\s*1|MTS\s*2)\b",
-    "L5": r"\b(?:senior|sr\.?|L5|SDE\s*III|engineer\s*III|MTS\s*3|lead\s+engineer)\b",
+    "L4": r"\b(?:mid|intermediate|L4|SDE\s*II|engineer\s*-?\s*II|MTS\s*1|MTS\s*2|II)\b",
+    "L5": r"\b(?:senior|sr\.?|L5|SDE\s*III|engineer\s*-?\s*III|MTS\s*3|lead|III)\b",
     "L6": r"\b(?:staff|L6|principal\s*engineer|tech\s*lead|architect)\b",
     "L7": r"\b(?:principal|L7|distinguished|fellow|director\s*of\s*engineering)\b",
     "INTERN": r"\b(?:intern|internship|co.op|trainee|apprentice)\b",
@@ -101,7 +102,13 @@ def is_entry_level(job: "JobListing") -> bool:
         return False
     max_years = get("job_search.max_years_experience", 2)
     years = min_years_required(job.description)
-    return years is None or years <= max_years
+    if years is not None and years > max_years:
+        return False
+    if get("job_search.hide_ineligible_grad_years", True):
+        from jobpilot.matching import grad_eligibility
+
+        return grad_eligibility(job.title, job.description)[0] != "no"
+    return True
 
 
 def posted_within(posted_at: str, max_age_days: float) -> bool:
@@ -128,72 +135,22 @@ def posted_within(posted_at: str, max_age_days: float) -> bool:
 # ── Skill matching ───────────────────────────────────────────────────────────
 
 def calculate_match_score(job_desc: str, job_title: str) -> int:
-    """Calculate match % between job and user's profile."""
-    user_skills = [s.lower() for s in get("profile.tech_stack", [])]
-    configured_roles = get("profile.target_roles", []) or get("profile.job_titles", [])
-    user_roles = [r.lower() for r in configured_roles]
-    text = f"{job_title} {job_desc}".lower()
-    title_lower = job_title.lower()
+    """Match % between a job and your resume (see jobpilot.matching)."""
+    from jobpilot.matching import score_job
 
-    # Skill overlap (from description if available, else title)
-    skill_matches = sum(1 for s in user_skills if s.lower() in text)
-    skill_score = (skill_matches / max(len(user_skills), 1)) * 30
-
-    # Role title match — THIS IS THE MOST IMPORTANT SIGNAL
-    role_score = 0
-
-    # Exact role match = highest priority
-    for role in user_roles:
-        words = role.split()
-        if all(w in title_lower for w in words):
-            role_score = 55  # exact match = near perfect
-            break
-
-    # If no exact match, check for keyword overlap
-    if role_score == 0:
-        role_keywords = [
-            "engineer", "developer", "ai", "ml", "machine learning",
-            "platform", "backend", "software", "python", "data",
-            "devops", "mlops", "infrastructure", "llm", "deep learning",
-        ]
-        title_hits = sum(1 for kw in role_keywords if kw in title_lower)
-        if title_hits >= 2:
-            role_score = 40
-        elif title_hits >= 1:
-            role_score = 25
-
-    # Level match — L3 target should match L3, L4, and unmarked roles
-    # But NEVER match manager/staff/principal (way too senior for 1yr exp)
-    detected = detect_level(job_title, job_desc)
-    target = get("profile.target_level", "L3")
-    level_map = {"L3": 3, "L4": 4, "L5": 5, "L6": 6, "L7": 7, "MANAGER": 8}
-    target_num = level_map.get(target, 3)
-    detected_num = level_map.get(detected, 4)
-    diff = detected_num - target_num  # positive = job is higher level
-    if detected in ("MANAGER", "L7", "L6"):
-        level_score = -20  # actively penalize — way too senior
-    elif detected == "INTERN":
-        level_score = -15  # not an intern — have 1yr industry exp
-    elif diff <= 0:
-        level_score = 15  # at or below target — great
-    elif diff == 1:
-        level_score = 10  # one above — still apply
-    elif diff == 2:
-        level_score = 0   # two above — maybe stretch
-    else:
-        level_score = -10
-
-    return max(min(int(skill_score + role_score + level_score), 100), 0)
+    return score_job(job_title, job_desc, detect_level(job_title, job_desc))[0]
 
 
 # ── Greenhouse Scraper ───────────────────────────────────────────────────────
 
 async def scrape_greenhouse(client: httpx.AsyncClient, company_slug: str) -> list[JobListing]:
-    """Scrape jobs from a Greenhouse board — fast mode (title matching only)."""
+    """Scrape jobs (with descriptions) from a Greenhouse board."""
+    from jobpilot.matching import title_fit
+
     jobs = []
     url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs"
     try:
-        resp = await client.get(url, timeout=15)
+        resp = await client.get(url, params={"content": "true"}, timeout=30)
         resp.raise_for_status()
         data = resp.json()
     except (httpx.HTTPError, ValueError):
@@ -201,27 +158,26 @@ async def scrape_greenhouse(client: httpx.AsyncClient, company_slug: str) -> lis
 
     for item in data.get("jobs", []):
         title = item.get("title", "")
-        location = item.get("location", {}).get("name", "")
+        if title_fit(title)[0] == 0:
+            continue  # skip parsing descriptions of jobs that can't match
+        location = (item.get("location") or {}).get("name", "")
         abs_url = item.get("absolute_url", "")
-
-        match_score = calculate_match_score("", title)
-        if match_score < 15:
-            continue
-
-        level = detect_level(title, "")
+        # Greenhouse returns the description as escaped HTML
+        desc = BeautifulSoup(html.unescape(item.get("content", "") or ""), "html.parser")
+        desc = desc.get_text(" ", strip=True)
 
         jobs.append(JobListing(
             source="greenhouse",
             company=company_slug,
             title=title,
-            level=level,
+            level=detect_level(title, desc),
             location=location,
             comp_min=0,
             comp_max=0,
             url=abs_url or url,
-            description="",
+            description=desc[:5000],
             posted_at=item.get("first_published") or item.get("updated_at", ""),
-            match_score=match_score,
+            match_score=calculate_match_score(desc, title),
         ))
     return jobs
 
@@ -338,7 +294,9 @@ async def scrape_linkedin_jobs(
     url = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
     headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
 
-    for role in roles[:max_roles]:
+    extra_keywords = get("job_search.linkedin.keywords", []) or []
+    searches = list(dict.fromkeys([*roles[:max_roles], *extra_keywords]))
+    for role in searches:
         for loc_name, geo_id in search_locations:
             params = {
                 "keywords": role,
@@ -402,6 +360,62 @@ async def scrape_linkedin_jobs(
                         match_score=calculate_match_score("", title),
                     ))
     return jobs
+
+
+LINKEDIN_SENIORITY = {
+    "internship": "INTERN", "entry level": "L3", "associate": "L3",
+    "mid-senior level": "L5", "director": "MANAGER", "executive": "MANAGER",
+}
+
+
+async def fetch_linkedin_descriptions(
+    client: httpx.AsyncClient, jobs: list[JobListing]
+) -> None:
+    """Fill in description, level and score for LinkedIn jobs whose title fits."""
+    from jobpilot.matching import score_job, title_fit
+
+    max_fetch = get("job_search.linkedin.max_descriptions", 120)
+    candidates = [
+        j for j in jobs
+        if j.source == "linkedin" and not j.description
+        and j.level not in SENIOR_LEVELS and title_fit(j.title)[0] > 0
+    ]
+    headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
+    seen: set[str] = set()
+    for job in candidates:
+        if len(seen) >= max_fetch:
+            break
+        job_id = re.search(r"(\d{6,})/?$", job.url)
+        if not job_id or job_id.group(1) in seen:
+            continue
+        seen.add(job_id.group(1))
+        try:
+            resp = await client.get(
+                f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id.group(1)}",
+                headers=headers, timeout=15,
+            )
+        except httpx.HTTPError:
+            continue
+        if resp.status_code == 429:
+            print("⚠️  LinkedIn rate limit hit — remaining jobs scored on title only")
+            break
+        if resp.status_code != 200:
+            continue
+        await asyncio.sleep(0.5)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        body = soup.select_one("div.show-more-less-html__markup, div.description__text")
+        if body:
+            job.description = body.get_text(" ", strip=True)[:5000]
+        job.level = detect_level(job.title, job.description)
+        for item in soup.select("li.description__job-criteria-item"):
+            label = item.select_one("h3")
+            value = item.select_one("span")
+            if label and value and "seniority" in label.get_text().lower():
+                mapped = LINKEDIN_SENIORITY.get(value.get_text(strip=True).lower())
+                # Trust an explicit title level over LinkedIn's often-generic tag
+                if mapped and job.level == "L4":
+                    job.level = mapped
+        job.match_score = score_job(job.title, job.description, job.level)[0]
 
 
 # ── Company career page scrapers ─────────────────────────────────────────
@@ -489,20 +503,34 @@ async def scrape_all_sources(location_scope: str = "all") -> list[JobListing]:
             if isinstance(result, list):
                 all_jobs.extend(result)
 
+        # Search results / aggregator lists have no description — fetch it for promising jobs
+        await fetch_linkedin_descriptions(client, all_jobs)
+        from jobpilot.scraper.descriptions import enrich_descriptions
+
+        fetched = await enrich_descriptions(client, all_jobs)
+        if fetched:
+            print(f"📄 Fetched {fetched} job descriptions for skill matching")
+
     # Filter by match threshold and salary floor
     salary_floor = get("profile.salary_floor_usd", 0)
     blacklist = [c.lower() for c in get("job_search.blacklisted_companies", [])]
 
+    from jobpilot.matching import new_grad_signal
+
     entry_level_only = get("job_search.entry_level_only", False)
+    new_grad_only = get("job_search.new_grad_only", False)
     max_age_days = get("job_search.max_age_days", 0)
 
     matched = []
+    title_only_threshold = get("job_search.match_threshold_title_only", threshold)
     for job in _dedupe(all_jobs):
-        if job.match_score < threshold:
+        if job.match_score < (threshold if job.description else title_only_threshold):
             continue
         if job.company.lower() in blacklist:
             continue
         if entry_level_only and not is_entry_level(job):
+            continue
+        if new_grad_only and not new_grad_signal(job.title, job.description, job.source):
             continue
         if not posted_within(job.posted_at, max_age_days):
             continue
@@ -538,21 +566,49 @@ async def scrape_all_sources(location_scope: str = "all") -> list[JobListing]:
     return matched
 
 
+_US_STATES = (
+    "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH "
+    "NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC"
+).split()
+_US_RE = re.compile(
+    r"united states|\busa?\b|u\.s\.|\bnyc\b|new york|california|texas|washington|seattle|"
+    r"san francisco|\bsf\b|bay area|boston|chicago|austin|los angeles|\bla\b|denver|atlanta|"
+    r",\s*(?:" + "|".join(_US_STATES) + r")\b",
+    re.IGNORECASE,
+)
+_INDIA_RE = re.compile(
+    r"india|bangalore|bengaluru|hyderabad|mumbai|chennai|pune|noida|gurgaon|gurugram|"
+    r"karnataka|maharashtra|telangana|tamil nadu|kerala|kochi|thiruvananthapuram|delhi|kolkata|"
+    r"ahmedabad|coimbatore|haryana",
+    re.IGNORECASE,
+)
+_OTHER_COUNTRY_RE = re.compile(
+    r"canada|toronto|vancouver|montreal|\buk\b|united kingdom|london|england|ireland|dublin|"
+    r"france|paris|germany|berlin|munich|netherlands|amsterdam|spain|madrid|poland|warsaw|"
+    r"switzerland|zurich|israel|tel aviv|singapore|japan|tokyo|korea|seoul|china|beijing|"
+    r"shanghai|australia|sydney|melbourne|mexico|brazil|argentina|emea|apac|europe|latam",
+    re.IGNORECASE,
+)
+
+
 def _location_matches_scope(location: str, location_scope: str) -> bool:
-    """Keep location-specific scans from mixing unrelated job results."""
+    """Keep location-specific scans from mixing unrelated job results.
+
+    A job matches if it names a place in the scope. "Remote" alone only matches when
+    no other country is named ("Paris, France, Remote" is not a US job).
+    """
     if location_scope == "all":
         return True
-    normalized = (location or "").lower()
+    loc = location or ""
     if location_scope == "bangalore":
-        return any(term in normalized for term in ("bangalore", "bengaluru", "karnataka"))
+        return re.search(r"bangalore|bengaluru|karnataka", loc, re.IGNORECASE) is not None
     if location_scope == "india":
-        return any(term in normalized for term in (
-            "india", "bangalore", "bengaluru", "hyderabad", "mumbai", "chennai",
-            "pune", "noida", "gurgaon", "gurugram", "karnataka", "remote",
-        ))
-    if location_scope == "usa":
-        return any(term in normalized for term in (
-            "united states", "usa", "u.s.", "new york", "california", "texas",
-            "seattle", "boston", "chicago", "austin", "remote",
-        ))
-    return True
+        home, others = _INDIA_RE, (_US_RE, _OTHER_COUNTRY_RE)
+    elif location_scope == "usa":
+        home, others = _US_RE, (_INDIA_RE, _OTHER_COUNTRY_RE)
+    else:
+        return True
+    if home.search(loc):
+        return True
+    remote = re.search(r"remote|anywhere", loc, re.IGNORECASE)
+    return bool(remote) and not any(rx.search(loc) for rx in others)
