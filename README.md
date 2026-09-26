@@ -1,6 +1,86 @@
-# JobPilot — AI Job Auto-Apply Agent
+# JobPilot
 
-Automated job hunting system: scrapes LinkedIn + job boards, generates ATS-optimized resumes (90+ score, no AI watermarks), and auto-applies via browser automation.
+Two tools in one repository:
+
+1. **Match analyzer** (below) — paste a job description, see how your resume scores
+   against it and exactly why, track your applications, and learn which missing skill
+   would unlock the most of the jobs you actually want. Everything runs locally: one
+   SQLite file, no scraping, no outbound calls.
+2. **Legacy scraper and auto-apply** — earlier modules that scrape job boards and fill
+   application forms. Not used by the analyzer, and not recommended: automated
+   submission breaks most job boards' terms, and a logged-in scraping session puts the
+   account you are job hunting with at risk. See [docs/LEGACY.md](docs/LEGACY.md).
+
+---
+
+# Match analyzer
+
+![Match report](docs/img/analyze.png)
+
+## Quick start
+
+```bash
+python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+
+# command line
+jobpilot-match resume path/to/your_resume.pdf
+jobpilot-match score path/to/job_description.txt
+jobpilot-match save  path/to/job_description.txt -t "Backend Engineer" -c Stripe
+jobpilot-match insights
+
+# or the web UI
+uvicorn jobpilot.api.server:app --port 8000     # http://localhost:8000
+cd web && npm install && npm run dev            # http://localhost:5174 in development
+```
+
+## What it does
+
+**Reads the posting like a screen does.** Requirements are pulled out one by one,
+marked required or preferred, with the years asked for and the sentence they came
+from. 82 skills are recognised through their aliases, so "K8s", "Kubernetes" and
+"k8s" are one skill.
+
+**Scores your resume, and shows its work.** Every matched skill carries the bullet
+that proves it; every gap carries the sentence that asked for it. Three components —
+skills, experience, education — so a missing year never looks like a missing skill.
+
+**Tells you what to fix.** Skills listed only in your skills section with no
+experience behind them. Skills the analyzer inferred rather than read, which a
+keyword screen would miss. Skills on your resume this posting never asked for.
+
+**Tracks applications** through saved → applied → screen → interview → outcome, with
+every stage change recorded.
+
+**Says what to learn next**, from your own saved jobs rather than from a blog post.
+
+![Insights](docs/img/insights.png)
+
+## Design notes
+
+The interesting decisions, and the bugs real postings found, are in
+[docs/MATCH_ANALYZER.md](docs/MATCH_ANALYZER.md).
+
+## Layout
+
+```
+jobpilot/analyzer/   skills.py (taxonomy)  jd.py (posting → requirements)
+                     resume.py (resume → bullets + evidence)  match.py (scoring)
+                     gaps.py (across all saved jobs)  store.py (SQLite)  cli.py
+jobpilot/api/        FastAPI: REST + serves the built dashboard
+web/                 React + TypeScript (Vite)
+tests/               72 tests
+```
+
+## Tests
+
+```bash
+pytest tests/test_analyzer.py tests/test_api.py -q
+```
+
+---
+
+## Legacy modules
 
 ## Quick Start
 
